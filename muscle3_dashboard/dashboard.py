@@ -12,6 +12,7 @@ from muscle3_dashboard.components.log_files import LogFilesViewer
 from muscle3_dashboard.components.profiling_information import (
     ProfilingInformationViewer,
 )
+from muscle3_dashboard.components.recorder_viewer import recorder_tabs
 from muscle3_dashboard.components.ymmsl_graph import YmmslGraphViewer
 from muscle3_dashboard.data_manager import DataManager
 from muscle3_dashboard.instances import base_name
@@ -87,18 +88,27 @@ class Dashboard(pn.viewable.Viewer):
         self._auto_opened = False
         self.data_manager.param.watch(self._auto_open_crash, "data_updated")
 
-        # Single page, top to bottom: a crash banner (only on failure), the
+        # Run page, top to bottom: a crash banner (only on failure), the
         # simulation graph (components coloured by status, click one for its
         # summary + logs), the clicked component's summary, then the log files.
-        self.template.main.append(
-            pn.Column(
-                self.crash_analysis_viewer,
-                self.ymmsl_graph_viewer,
-                self.component_summary_viewer,
-                self.log_files_viewer,
-                sizing_mode="stretch_width",
-            )
+        run_page = pn.Column(
+            self.crash_analysis_viewer,
+            self.ymmsl_graph_viewer,
+            self.component_summary_viewer,
+            self.log_files_viewer,
+            sizing_mode="stretch_width",
         )
+        # A run with recorder (tap) actors additionally gets one tab per
+        # recorder, rendering its distilled stores with the run's plot file
+        # (see components/recorder_viewer.py). Without recorders the page is
+        # untabbed, as before.
+        rec_tabs = recorder_tabs(run_folder)
+        if rec_tabs:
+            self.template.main.append(
+                pn.Tabs(("Run", run_page), *rec_tabs, dynamic=True)
+            )
+        else:
+            self.template.main.append(run_page)
 
         # Populate everything once now (reads the logs, colours the graph, and
         # auto-opens the responsible component's log for an already-crashed run)
