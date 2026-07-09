@@ -27,6 +27,7 @@ import html
 import logging
 import runpy
 from pathlib import Path
+from typing import Collection
 
 import panel as pn
 from panel.viewable import Viewer
@@ -100,9 +101,19 @@ def _profile_from_stores(port_dirs: list[Path]) -> str | None:
     return None
 
 
-def recorder_tabs(run_folder: Path) -> list[tuple[str, Viewer]]:
-    """One ``(title, viewer)`` per recorder instance found in the run."""
-    recorders = find_recorder_instances(run_folder)
+def recorder_tabs(
+    run_folder: Path, skip: Collection[str] = ()
+) -> list[tuple[str, Viewer]]:
+    """One ``(title, viewer)`` per recorder instance found in the run.
+
+    ``skip`` names instances that already have a tab, so a caller polling for
+    recorders that appear mid-run only builds viewers for new ones.
+    """
+    recorders = {
+        name: port_dirs
+        for name, port_dirs in find_recorder_instances(run_folder).items()
+        if name not in skip
+    }
     if not recorders:
         return []
     settings = _read_settings(run_folder)
