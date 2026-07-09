@@ -26,8 +26,8 @@ message pane instead of breaking the dashboard.
 import html
 import logging
 import runpy
+from collections.abc import Collection
 from pathlib import Path
-from typing import Collection
 
 import panel as pn
 from panel.viewable import Viewer
@@ -119,9 +119,7 @@ def recorder_tabs(
     settings = _read_settings(run_folder)
     tabs = []
     for name, port_dirs in recorders.items():
-        plot_file = settings.get(f"{name}.config") or _profile_from_stores(
-            port_dirs
-        )
+        plot_file = settings.get(f"{name}.config") or _profile_from_stores(port_dirs)
         md_spec = settings.get(f"{name}.md")
         tabs.append(
             (
@@ -194,9 +192,7 @@ class RecorderViewer(Viewer):
             )
             return
         if not Path(self._plot_file).is_file():
-            self._show_message(
-                f"Plot file `{html.escape(self._plot_file)}` not found."
-            )
+            self._show_message(f"Plot file `{html.escape(self._plot_file)}` not found.")
             return
         try:
             # Plot files build holoviews objects at class-definition time and
@@ -243,11 +239,7 @@ class RecorderViewer(Viewer):
     def _occurrences(self) -> list[str]:
         """Sorted occurrence names present across this recorder's ports."""
         return sorted(
-            {
-                store.stem
-                for port in self._port_dirs
-                for store in port.glob("*.zarr")
-            }
+            {store.stem for port in self._port_dirs for store in port.glob("*.zarr")}
         )
 
     def _load_data(self, occurrence: str) -> dict:
@@ -276,9 +268,7 @@ class RecorderViewer(Viewer):
                         store, group=group, consolidated=False, chunks=None
                     )
                 except Exception:
-                    logger.debug(
-                        "group %s of %s not readable yet", group, store
-                    )
+                    logger.debug("group %s of %s not readable yet", group, store)
         return data
 
     # -- refresh loop --------------------------------------------------------
@@ -309,8 +299,7 @@ class RecorderViewer(Viewer):
         key = (
             occurrence,
             tuple(
-                (group, ds.sizes.get("time", 0))
-                for group, ds in sorted(data.items())
+                (group, ds.sizes.get("time", 0)) for group, ds in sorted(data.items())
             ),
         )
         if key == self._data_key:
