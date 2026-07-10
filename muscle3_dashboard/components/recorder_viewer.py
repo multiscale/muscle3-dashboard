@@ -18,6 +18,12 @@ Two more settings are honoured (both optional, read from
 - a store's root attribute ``distill_profile`` (stamped by the recorder) is
   the fallback plot-file reference when settings are unavailable.
 
+The recorder snapshots the plot file next to its data
+(``workdir/<plot file name>``, beside the port dirs) when it starts; that
+copy is preferred over the path from the settings, so the tab renders with
+the exact code that recorded the stores even if the original file was edited
+since.
+
 The IMAS/plotting stack (imas, xarray, zarr, holoviews, the plot file's own
 imports) is imported lazily per tab; a missing dependency degrades to a
 message pane instead of breaking the dashboard.
@@ -101,6 +107,18 @@ def _profile_from_stores(port_dirs: list[Path]) -> str | None:
     return None
 
 
+def _resolve_plot_file(port_dirs: list[Path], plot_file: object) -> str | None:
+    """Prefer the recorder's snapshot of the plot file, saved next to its
+    data: it is the code that produced the stores, immune to later edits of
+    the original. Fall back to the reference as given."""
+    if not plot_file:
+        return None
+    snapshot = port_dirs[0].parent / Path(str(plot_file)).name
+    if snapshot.is_file():
+        return str(snapshot)
+    return str(plot_file)
+
+
 def recorder_tabs(
     run_folder: Path, skip: Collection[str] = ()
 ) -> list[tuple[str, Viewer]]:
@@ -127,7 +145,7 @@ def recorder_tabs(
                 RecorderViewer(
                     name,
                     port_dirs,
-                    str(plot_file) if plot_file else None,
+                    _resolve_plot_file(port_dirs, plot_file),
                     str(md_spec) if md_spec else None,
                 ),
             )
