@@ -18,8 +18,10 @@ from muscle3_dashboard.instances import base_name
 from muscle3_dashboard.panel_util import add_session_periodic_callback
 from muscle3_dashboard.pathlink import path_html
 
-# Material design gives cleaner cards/typography than the default.
-pn.extension("tabulator", design="material", sizing_mode="stretch_width")
+# Material design gives cleaner cards/typography than the default. (No
+# "tabulator" extension: it pulls a large JS/CSS bundle into every page's first
+# load and nothing on the run page uses a Tabulator.)
+pn.extension(design="material", sizing_mode="stretch_width")
 
 #: Header status-dot colours, light Material shades for the dark header.
 _STATE_COLORS = {
@@ -100,10 +102,15 @@ class Dashboard(pn.viewable.Viewer):
             )
         )
 
-        # Populate everything once now (reads the logs, colours the graph, and
-        # auto-opens the responsible component's log for an already-crashed run)
-        # so the page is correct at load instead of after the first poll.
-        self.data_manager.update()
+        # Populate everything once (reads the logs, colours the graph, and
+        # auto-opens the responsible component's log for an already-crashed run).
+        # In a live session this is deferred to onload so the page structure
+        # paints first and the (possibly large) logs stream in right after;
+        # outside a session (scripts/tests) there is no onload, so do it now.
+        if pn.state.curdoc is not None:
+            pn.state.onload(self.data_manager.update)
+        else:
+            self.data_manager.update()
 
         self.session_created()
 

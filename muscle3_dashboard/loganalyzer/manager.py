@@ -9,6 +9,7 @@ import pandas as pd
 import param
 from bokeh.core.serialization import Serializable, Serializer
 
+from muscle3_dashboard.constants import MAX_LINES
 from muscle3_dashboard.loganalyzer.base import BaseLogAnalyzer
 
 _LOGPARSER = re.compile(
@@ -161,12 +162,17 @@ class ManagerLogAnalyzer(BaseLogAnalyzer):
             )
             per_source[loglevel] += 1
 
-        # Update externally visible state
+        # Update externally visible state. The full file is still parsed above
+        # (statuses/exit codes are scattered throughout); new_lines feeds only
+        # the terminal, which shows the last MAX_LINES, so cap it there.
+        combined = self.new_lines + log_lines
+        if len(combined) > MAX_LINES:
+            combined = combined[-MAX_LINES:]
         self.param.update(
             lines_read=self._lines_read,
             lines_parsed=self._lines_parsed,
             messages_per_level=self._messages_per_level.copy(),
-            new_lines=self.new_lines + log_lines,
+            new_lines=combined,
         )
 
     def _parse_manager_log_message(self, message: str) -> None:

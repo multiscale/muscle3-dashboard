@@ -97,10 +97,12 @@ def _legend_html() -> str:
 
 
 try:
-    from ymmsl2svg import ymmsl2svg
+    from ymmsl import load_as
+    from ymmsl.v0_2 import Configuration, TimelineTree
+    from ymmsl2svg.main import configuration2svg
     from ymmsl2svg.settings import settings as ymmsl2svg_settings
 except ImportError:  # optional "graph" extra not installed
-    ymmsl2svg = None
+    configuration2svg = None
     ymmsl2svg_settings = None
 
 
@@ -191,8 +193,10 @@ class YmmslGraphViewer(pn.viewable.Viewer):
         # must not be retried each tick; the config is static once present.
         self._svg_done = False
         self._styled: dict[str, tuple[str, float]] = {}  # name -> (status, opacity)
-        # base name -> monotonic time of its last log write, for the activity glow.
+        # base name -> monotonic time its log was last seen to change, and
+        # instance -> last-seen mtime, for the activity glow.
         self._last_write: dict[str, float] = {}
+        self._seen_mtime: dict[str, float] = {}
 
         self.graph = _ClickableSVG()
         self.graph.param.watch(self._on_click, "component")
@@ -224,11 +228,20 @@ class YmmslGraphViewer(pn.viewable.Viewer):
             margin=CARD_MARGIN,
         )
         self.data_manager.param.watch(self.update, "data_updated")
-        self.render()
+        # Generating the SVG (ymmsl2svg) is the single most expensive step in
+        # building the run page, so defer it until after first paint: show a
+        # placeholder now and render in an onload callback, so the page shell
+        # appears immediately and the graph fills in a moment later. Outside a
+        # live session (scripts/tests) there is no onload, so render now.
+        self._show_message("Rendering simulation graph…")
+        if pn.state.curdoc is not None:
+            pn.state.onload(self.render)
+        else:
+            self.render()
 
     def render(self) -> None:
         """Render configuration.ymmsl into the graph, with fallbacks."""
-        if ymmsl2svg is None:
+        if configuration2svg is None:
             # A missing dependency won't change while we run: settle for good.
             self._svg_done = True
             self._show_message(
@@ -243,32 +256,42 @@ class YmmslGraphViewer(pn.viewable.Viewer):
             self._show_message(f"No `configuration.ymmsl` in `{config.parent}`.")
             return
 
-        # From here the config exists and is static, so whatever ymmsl2svg makes
-        # of it is final: draw (or fail) once and never call it again.
+        # From here the config exists and is static, so whatever we make of it is
+        # final: draw (or fail) once and never call it again.
         self._svg_done = True
+
+        # Parsing the ymmsl file dominates the render cost (~40 ms vs ~4 ms to
+        # draw), so parse it once and reuse it. The drawing is identical whether
+        # or not timelines validate — the strict check only raises, it doesn't
+        # change the layout — so always draw non-strict and verify the timelines
+        # separately and cheaply (~1 ms), instead of drawing a second time when
+        # the strict check fails.
+        try:
+            cfg = load_as(Configuration, config)
+        except Exception as load_error:
+            logger.warning("Could not load %s: %s", config, load_error)
+            self._show_message(f"Could not load `{config.name}`: {load_error}")
+            return
+
         ymmsl2svg_settings.debug = False
+        ymmsl2svg_settings.check_timelines = False
         # hasattr-guarded so an older ymmsl2svg without the option still renders.
         if not SHOW_PORT_ICONS and hasattr(ymmsl2svg_settings, "disable_port_icons"):
             ymmsl2svg_settings.disable_port_icons()
+        try:
+            svg = configuration2svg(cfg)
+        except Exception as draw_error:
+            logger.warning("Could not visualize %s: %s", config, draw_error)
+            self._show_message(f"Could not visualize `{config.name}`: {draw_error}")
+            return
+
+        # Timelines that don't validate (e.g. time-scale bridges / accumulators)
+        # still draw fine, but the layout is approximate — flag it.
         note_html = ""
         try:
-            ymmsl2svg_settings.check_timelines = True
-            svg = ymmsl2svg(config)
-        except Exception as strict_error:
-            # Best-effort: draw without timeline verification for models the
-            # strict checker rejects (e.g. time-scale bridges / accumulators).
-            try:
-                ymmsl2svg_settings.check_timelines = False
-                svg = ymmsl2svg(config)
-                note_html = self._approximate_note(strict_error)
-            except Exception:
-                logger.warning("Could not visualize %s: %s", config, strict_error)
-                self._show_message(
-                    f"Could not visualize `{config.name}`: {strict_error}"
-                )
-                return
-            finally:
-                ymmsl2svg_settings.check_timelines = True
+            TimelineTree(cfg.root_model()).check_consistent()
+        except Exception as timeline_error:
+            note_html = self._approximate_note(timeline_error)
 
         self._base_svg = str(svg)
         self._rendered = True
@@ -329,16 +352,19 @@ class YmmslGraphViewer(pn.viewable.Viewer):
         return best
 
     def _active_components(self) -> set[str]:
-        """Base component names that wrote log output within the last
-        _ACTIVE_WINDOW_SECONDS (records writers seen this render first)."""
+        """Base component names whose log changed within _ACTIVE_WINDOW_SECONDS.
+
+        Activity is detected from log-file mtimes (a cheap stat surfaced by the
+        data manager), not from log *content*, so it stays correct even if
+        reading log bodies becomes lazy. The glow window is measured on the
+        local monotonic clock — recording when a change was first observed — so
+        it is unaffected by NFS server/client skew in the mtime values.
+        """
         now = time.monotonic()
-        for lines_by_instance in (
-            self.data_manager.stdout_log_lines,
-            self.data_manager.stderr_log_lines,
-        ):
-            for instance, lines in lines_by_instance.items():
-                if lines:
-                    self._last_write[base_name(instance)] = now
+        for instance, mtime in self.data_manager.instance_mtimes.items():
+            if self._seen_mtime.get(instance) != mtime:
+                self._seen_mtime[instance] = mtime
+                self._last_write[base_name(instance)] = now
         return {
             name
             for name, written in self._last_write.items()

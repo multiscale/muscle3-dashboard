@@ -1,4 +1,5 @@
 import logging
+import os
 from pathlib import Path
 
 import param
@@ -35,6 +36,10 @@ class DataManager(param.Parameterized):
         self.manager_log_analyzer: ManagerLogAnalyzer | None = None
         self.stdout_log_analyzers: dict[str, BaseLogAnalyzer] = {}
         self.stderr_log_analyzers: dict[str, BaseLogAnalyzer] = {}
+        #: Instance name -> most recent mtime (epoch secs) across its
+        #: stdout/stderr; drives the graph's activity glow without reading the
+        #: log bodies (a cheap stat, so it stays correct if reads become lazy).
+        self.instance_mtimes: dict[str, float] = {}
         self.update_run_folder(run_folder)
 
     def update_run_folder(self, run_folder: Path) -> None:
@@ -87,11 +92,13 @@ class DataManager(param.Parameterized):
         if not instances.is_dir():
             return
         for component in instances.iterdir():
+            # tail=True: only the last MAX_LINES are ever displayed, so don't
+            # read the (potentially large) historical stdout/stderr at open.
             self.stdout_log_analyzers[component.name] = BaseLogAnalyzer(
-                component / "stdout.txt"
+                component / "stdout.txt", tail=True
             )
             self.stderr_log_analyzers[component.name] = BaseLogAnalyzer(
-                component / "stderr.txt"
+                component / "stderr.txt", tail=True
             )
 
     def update(self) -> None:
@@ -99,7 +106,20 @@ class DataManager(param.Parameterized):
         self.update_manager_logfiles()
         self.update_stdout_logfiles()
         self.update_stderr_logfiles()
+        self._refresh_instance_mtimes()
         self.data_updated = True
+
+    def _refresh_instance_mtimes(self) -> None:
+        """Record each instance's most recent stdout/stderr mtime."""
+        mtimes: dict[str, float] = {}
+        for analyzers in (self.stdout_log_analyzers, self.stderr_log_analyzers):
+            for instance, analyzer in analyzers.items():
+                try:
+                    mtime = os.path.getmtime(analyzer.path)
+                except OSError:
+                    continue
+                mtimes[instance] = max(mtimes.get(instance, 0.0), mtime)
+        self.instance_mtimes = mtimes
 
     def update_logs_last_updated(self, log_analyzer: BaseLogAnalyzer) -> None:
         """Update logs_last_updated based on last time given file was

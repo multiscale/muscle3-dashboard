@@ -13,6 +13,11 @@ MANAGER = "muscle_manager"
 #: dropdown is used instead.
 _MAX_RADIO_INSTANCES = 20
 
+#: New terminals built + backfilled per poll while warming in the background.
+#: Keeps each poll cheap while making switching to any log quick within a few
+#: seconds of opening the run.
+_WARM_PER_TICK = 4
+
 
 class LogFilesViewer(pn.viewable.Viewer):
     """Panel component showing one log at a time: the muscle manager log
@@ -32,6 +37,10 @@ class LogFilesViewer(pn.viewable.Viewer):
         self.manager_terminal = self.log_terminal()
         self.component_terminals: dict[str, pn.widgets.Terminal] = {}
         self._has_output: set[str] = set()
+        # Buffered, not-yet-written lines per source key (MANAGER or
+        # "<instance> - <stream>"). Each tick appends here; only the visible
+        # terminal is actually written (flushed), the rest lazily on first show.
+        self._pending: dict[str, list[str]] = {}
         self.source = MANAGER
 
         # Picks which instance of a multi-instance component (e.g. nice_inv[4])
@@ -115,6 +124,35 @@ class LogFilesViewer(pn.viewable.Viewer):
         self._instance = event.new
         self._show_current()
 
+    def _current_key(self) -> str:
+        """Source key of the currently shown log (matches _pending keys)."""
+        if self.source == MANAGER:
+            return MANAGER
+        instance = self._instance or self.source
+        return f"{instance} - {self.stream_toggle.value}"
+
+    def _terminal_for(self, key: str) -> pn.widgets.Terminal | None:
+        if key == MANAGER:
+            return self.manager_terminal
+        return self.component_terminals.get(key)
+
+    def _buffer(self, key: str, lines: list[str]) -> None:
+        """Append new lines to a source's pending buffer, capped to MAX_LINES."""
+        if not lines:
+            return
+        buf = self._pending.setdefault(key, [])
+        buf.extend(lines)
+        if len(buf) > MAX_LINES:
+            del buf[:-MAX_LINES]
+
+    def _flush(self, key: str) -> None:
+        """Write a source's buffered lines to its terminal in one write."""
+        terminal = self._terminal_for(key)
+        buf = self._pending.get(key)
+        if terminal is not None and buf:
+            terminal.write("".join(buf))
+            buf.clear()
+
     def _show_current(self, *_events) -> None:
         """Point the container at the currently selected log"""
         path = None
@@ -129,6 +167,7 @@ class LogFilesViewer(pn.viewable.Viewer):
             self.stream_toggle.visible = False
             self.instance_slot.visible = False
             shown = MANAGER
+            self._flush(MANAGER)
             pane = self.manager_terminal
             path = self.data_manager.manager_log_analyzer.path
         else:
@@ -137,9 +176,14 @@ class LogFilesViewer(pn.viewable.Viewer):
             stream = self.stream_toggle.value
             shown = f"{instance} {stream}"
             key = f"{instance} - {stream}"
-            pane = self.component_terminals.get(
-                key, pn.pane.Markdown(f"No output for `{shown}` yet.")
-            )
+            # Build the terminal lazily on first show, then flush its backlog.
+            if key in self._has_output:
+                terminal = self.component_terminals.get(key) or self.log_terminal()
+                self.component_terminals[key] = terminal
+                self._flush(key)
+                pane = terminal
+            else:
+                pane = pn.pane.Markdown(f"No output for `{shown}` yet.")
             analyzers = (
                 self.data_manager.stdout_log_analyzers
                 if stream == "stdout"
@@ -195,29 +239,52 @@ class LogFilesViewer(pn.viewable.Viewer):
         )
 
     def update(self, event) -> None:
-        """Append new log lines to the manager and per-component terminals."""
-        for line in self.data_manager.manager_log_lines[-MAX_LINES:]:
-            self.manager_terminal.write(line)
-
-        created = False
+        """Buffer new log lines; keep the visible terminal current and warm the
+        rest in the background so switching to them is quick."""
+        self._buffer(MANAGER, self.data_manager.manager_log_lines)
         for log_lines, stream in [
             (self.data_manager.stdout_log_lines, "stdout"),
             (self.data_manager.stderr_log_lines, "stderr"),
         ]:
             for component, lines in log_lines.items():
                 key = f"{component} - {stream}"
-                if key not in self.component_terminals:
-                    self.component_terminals[key] = self.log_terminal()
-                    created = True
                 if lines:
                     self._has_output.add(key)
-                for line in lines[-MAX_LINES:]:
-                    self.component_terminals[key].write(line)
+                self._buffer(key, lines)
 
-        # A selected source may have shown the "no output yet" fallback
-        # before its terminal existed.
-        if created and self.source != MANAGER:
+        # Build and show the visible terminal the moment its first output
+        # arrives (it may not exist yet if it was the "no output yet" fallback).
+        current = self._current_key()
+        if (
+            self.source != MANAGER
+            and current in self._has_output
+            and current not in self.component_terminals
+        ):
             self._show_current()
+        self._warm_terminals()
+
+    def _warm_terminals(self) -> None:
+        """Keep built terminals current and build a few more in the background.
+
+        The first poll only writes the visible terminal (cheap first paint);
+        subsequent polls trickle the remaining terminals into existence and fill
+        their backlog, so by the time the user switches to one it is already
+        populated rather than read + written on the click. Reads themselves
+        already happen for every log each poll (in the data manager), so this
+        only spreads the terminal writes off the first-paint path.
+        """
+        self._flush(MANAGER)
+        for key in self.component_terminals:
+            self._flush(key)
+        budget = _WARM_PER_TICK
+        for key in list(self._has_output):
+            if budget <= 0:
+                break
+            if key in self.component_terminals:
+                continue
+            self.component_terminals[key] = self.log_terminal()
+            self._flush(key)
+            budget -= 1
 
     def __panel__(self):
         return self.card

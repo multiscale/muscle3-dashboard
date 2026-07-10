@@ -84,6 +84,21 @@ class RunIndex:
 _index: RunIndex | None = None
 
 
+def _prewarm() -> None:
+    """Import the run-page modules ahead of the first request.
+
+    ``run_app`` imports the dashboard lazily so the landing page stays light,
+    but that import (Panel + ymmsl2svg + pandas + bokeh) takes ~1.5 s, paid by
+    whoever first opens a run. Doing it in a background thread at startup means
+    the import is already cached (or in progress, behind the import lock) by the
+    time a run is opened, without delaying the server or the landing page.
+    """
+    try:
+        import muscle3_dashboard.dashboard  # noqa: F401
+    except Exception:
+        logger.exception("Dashboard pre-warm import failed")
+
+
 def _age(timestamp: datetime | None) -> str:
     if timestamp is None:
         return "?"
@@ -311,6 +326,7 @@ def serve(
         "Scanning for runs under: %s",
         ", ".join(str(root) for root in roots) or "(none)",
     )
+    threading.Thread(target=_prewarm, name="m3dash-prewarm", daemon=True).start()
 
     origins = (_origins(local_port) if socket_path and local_port else []) + (
         _origins(tcp_port) if tcp_port else []
