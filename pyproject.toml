@@ -7,8 +7,8 @@ name = "muscle3-dashboard"
 description = "Panel dashboard for MUSCLE3 simulations"
 readme = {file = "README.md", content-type = "text/markdown"}
 authors = [
-    {name = "Iris van der Werf", email = "ivanderwerf@ignitioncomputing.com"},
-    {name = "Maarten Sebregts", email = "msebregts@ignitioncomputing.com"},
+    {name = "Daan van Vugt", email = "dvanvugt@ignitioncomputing.com"},
+    {name = "Mike Sanders", email = "msanders@ignitioncomputing.com"},
 ]
 classifiers = [
 ]
