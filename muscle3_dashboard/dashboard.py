@@ -1,6 +1,4 @@
 import html
-import threading
-from contextlib import suppress
 from datetime import datetime
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version
@@ -24,23 +22,6 @@ from muscle3_dashboard.pathlink import path_html
 # Material design gives cleaner cards/typography than the default.
 pn.extension("tabulator", design="material", sizing_mode="stretch_width")
 
-
-def _warm_up_colorcet() -> None:
-    """Import ``colorcet`` now, in the background, instead of on a user's
-    click.
-
-    Recorder tabs (``components/recorder_viewer.py``) build HoloViews plots
-    with named colormaps (e.g. ``cmap="viridis"``), which lazily imports
-    ``colorcet`` -- and registering its colormaps takes several seconds on
-    this matplotlib version. The import is cached process-wide, so doing it
-    here at server start means whoever opens a recorder tab first doesn't
-    have to pay that cost.
-    """
-    with suppress(ImportError):
-        import colorcet  # noqa: F401
-
-
-threading.Thread(target=_warm_up_colorcet, daemon=True).start()
 
 #: Header status-dot colours, light Material shades for the dark header.
 _STATE_COLORS = {

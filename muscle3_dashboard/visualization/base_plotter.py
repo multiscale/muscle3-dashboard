@@ -14,6 +14,7 @@ import numpy as np
 import panel as pn
 import param
 import xarray as xr
+from bokeh.palettes import Viridis256
 from panel.viewable import Viewable, Viewer
 
 from muscle3_dashboard.visualization.base_state import BaseState, Dim, Variable
@@ -22,6 +23,12 @@ from muscle3_dashboard.visualization.resizable_float_panel import (
 )
 
 logger = logging.getLogger()
+
+#: Passed as a resolved color list rather than the string "viridis": a named
+#: string sends HoloViews looking through matplotlib, bokeh *and* colorcet's
+#: colormaps to figure out which provider it belongs to, importing colorcet
+#: along the way -- even though this is a plain bokeh palette.
+_VIRIDIS = Viridis256
 
 
 class BasePlotter(Viewer):
@@ -237,7 +244,7 @@ class BasePlotter(Viewer):
             kdims=[x_name, y_name],
             vdims=[var.full_path],
         ).opts(
-            cmap="viridis",
+            cmap=_VIRIDIS,
             colorbar=True,
             framewise=True,
             title=title,
