@@ -1,22 +1,25 @@
 """Tabs for recorder (tap) actors: their distilled data, their plots.
 
-A recorder actor (``imas_muscle3.actors.recorder_component``, ``distill``
-format) taps a running simulation and writes one live-tailable Zarr store per
-*occurrence* (outer-loop iteration) under
+A recorder actor (``distill`` format) taps a running simulation and writes
+one live-tailable Zarr store per *occurrence* (outer-loop iteration) under
 ``instances/<rec>/workdir/<port>/<NNNN>.zarr``. When the run's settings point
-the recorder at a visualization plot file (``<rec>.config``, defining the
-``State``/``Plotter`` classes of ``imas_muscle3.visualization``), the same
-file tells this viewer how to render the stored data: the ``State`` defined
-what was recorded, the ``Plotter`` is loaded here to plot it — live while the
-run appends, or after it finished.
+the recorder at a visualization plot file (``<rec>.config``, defining
+``State``/``Plotter`` classes), the same file tells this viewer how to render
+the stored data: the ``State`` defined what was recorded, the ``Plotter`` is
+loaded here to plot it — live while the run appends, or after it finished.
 
-Two more settings are honoured (both optional, read from
-``configuration.ymmsl``):
+One more setting is honoured (optional, read from ``configuration.ymmsl``):
+a store's root attribute ``distill_profile`` (stamped by the recorder) is
+the fallback plot-file reference when ``<rec>.config`` is unavailable.
 
-- ``<rec>.md``: whitespace-separated ``ids_name=imas_uri`` pairs naming the
-  static machine-description IDSs the Plotter overlays (wall, coil geometry).
-- a store's root attribute ``distill_profile`` (stamped by the recorder) is
-  the fallback plot-file reference when settings are unavailable.
+This viewer has no domain of its own beyond MUSCLE3's own settings format --
+it doesn't know or care what a recorder's other settings mean. If the plot
+file defines an ``init_state(settings) -> dict`` function, this viewer calls
+it with every ``<rec>.*`` setting (prefix stripped) and passes the result to
+``State``'s constructor; that's the plot file's (and whatever domain package
+it imports) chance to turn its own settings into whatever ``State.__init__``
+expects. No ``init_state``, or no matching settings: ``State`` gets an empty
+dict, same as when there's nothing to configure.
 
 The recorder snapshots the plot file next to its data
 (``workdir/<plot file name>``, beside the port dirs) when it starts; that
@@ -24,9 +27,10 @@ copy is preferred over the path from the settings, so the tab renders with
 the exact code that recorded the stores even if the original file was edited
 since.
 
-The IMAS/plotting stack (imas, xarray, zarr, holoviews, the plot file's own
-imports) is imported lazily per tab; a missing dependency degrades to a
-message pane instead of breaking the dashboard.
+The plotting stack (xarray, zarr, holoviews, the plot file's own imports --
+which may themselves pull in a domain-specific package) is imported lazily
+per tab; a missing dependency degrades to a message pane instead of breaking
+the dashboard.
 """
 
 import html
@@ -137,8 +141,13 @@ def recorder_tabs(
     settings = _read_settings(run_folder)
     tabs = []
     for name, port_dirs in recorders.items():
-        plot_file = settings.get(f"{name}.config") or _profile_from_stores(port_dirs)
-        md_spec = settings.get(f"{name}.md")
+        prefix = f"{name}."
+        own_settings = {
+            key[len(prefix) :]: value
+            for key, value in settings.items()
+            if key.startswith(prefix)
+        }
+        plot_file = own_settings.get("config") or _profile_from_stores(port_dirs)
         tabs.append(
             (
                 name,
@@ -146,7 +155,7 @@ def recorder_tabs(
                     name,
                     port_dirs,
                     _resolve_plot_file(port_dirs, plot_file),
-                    str(md_spec) if md_spec else None,
+                    own_settings,
                 ),
             )
         )
@@ -157,9 +166,9 @@ class RecorderViewer(Viewer):
     """One recorder instance's tab: occurrence selector + its Plotter.
 
     The plot file's ``Plotter`` renders a ``State`` whose ``data`` this viewer
-    fills from the Zarr stores instead of live IDS messages. A periodic
-    callback re-checks the stores (cheap metadata reads) and pushes grown data
-    into the state, so an in-progress run plots live; 'latest' follows new
+    fills from the Zarr stores instead of live messages. A periodic callback
+    re-checks the stores (cheap metadata reads) and pushes grown data into
+    the state, so an in-progress run plots live; 'latest' follows new
     occurrences (Picard iterations) as they appear.
     """
 
@@ -168,16 +177,15 @@ class RecorderViewer(Viewer):
         name: str,
         port_dirs: list[Path],
         plot_file: str | None,
-        md_spec: str | None,
+        settings: dict[str, object],
     ) -> None:
         self._name = name
         self._port_dirs = port_dirs
         self._plot_file = plot_file
-        self._md_spec = md_spec
+        self._settings = settings
         self._state = None
         self._plotter = None
         self._data_key: object = None
-        self._md_cache: dict | None = None
 
         self.occurrence_select = pn.widgets.Select(
             name="Occurrence (outer-loop iteration)",
@@ -222,7 +230,9 @@ class RecorderViewer(Viewer):
             namespace = runpy.run_path(self._plot_file)
             state_class = namespace["State"]
             plotter_class = namespace["Plotter"]
-            self._state = state_class(self._load_md())
+            init_state = namespace.get("init_state")
+            context = self._build_state_context(init_state)
+            self._state = state_class(context)
             self._plotter = plotter_class(self._state)
             self._plot_area.objects = [self._plotter]
         except Exception as e:
@@ -232,22 +242,20 @@ class RecorderViewer(Viewer):
                 f"`{html.escape(repr(e))}`"
             )
 
-    def _load_md(self) -> dict:
-        """Machine-description IDSs from the ``<rec>.md`` setting."""
-        if self._md_cache is not None:
-            return self._md_cache
-        md: dict = {}
-        for entry in (self._md_spec or "").split():
-            try:
-                ids_name, uri = entry.split("=", 1)
-                import imas
-
-                with imas.DBEntry(uri, "r") as db:
-                    md[ids_name] = db.get(ids_name)
-            except Exception as e:
-                logger.warning("could not load md entry '%s': %s", entry, e)
-        self._md_cache = md
-        return md
+    def _build_state_context(self, init_state) -> dict:
+        """This recorder's settings, turned into ``State``'s constructor
+        argument via the plot file's own ``init_state``, if it defines one.
+        No domain knowledge lives here: this viewer only forwards settings
+        it already reads for its own purposes (e.g. ``config``)."""
+        if init_state is None:
+            return {}
+        try:
+            return dict(init_state(self._settings))
+        except Exception:
+            logger.exception(
+                "init_state(%r) failed for %s", self._settings, self._plot_file
+            )
+            return {}
 
     def _show_message(self, text: str) -> None:
         self._plot_area.objects = [pn.pane.Markdown(text)]

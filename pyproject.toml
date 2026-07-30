@@ -26,6 +26,20 @@ graph = [
     # Not on PyPI yet (depends on an unreleased ymmsl-python); pulled from git.
     "ymmsl2svg @ git+https://github.com/DaanVanVugt/ymmsl2svg.git@feat/conduit-hover-labels",
 ]
+recording = [
+    # State/Plotter and the Zarr-backed recorder: the shared, domain-agnostic
+    # base that any actor wanting a live/replay recorder tab builds on.
+    # Optional because the rest of the dashboard (log viewer, graph, m3dash)
+    # needs none of this; imported lazily so it stays that way.
+    "numpy",
+    "xarray",
+    "zarr",
+    "holoviews",
+    "param",
+    # Recorder.handle() takes a libmuscle Message -- only actors that
+    # actually record (and so already depend on muscle3) use this.
+    "muscle3>=0.10",
+]
 dev = [
     "ruff",
     "pytest",
