@@ -21,8 +21,7 @@ def test_get_setting_optional_returns_default_when_missing():
     instance = Mock()
     instance.get_setting.side_effect = KeyError("some_setting")
     assert (
-        get_setting_optional(instance, "some_setting", default="fallback")
-        == "fallback"
+        get_setting_optional(instance, "some_setting", default="fallback") == "fallback"
     )
 
 

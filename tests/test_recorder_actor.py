@@ -115,8 +115,7 @@ def test_serve_checkpoints_at_the_minimum_time_across_ports():
 
     # Checkpointed with the slower port's time, not the faster one's.
     saved_times = [
-        call.args[0].timestamp
-        for call in instance.save_snapshot.call_args_list
+        call.args[0].timestamp for call in instance.save_snapshot.call_args_list
     ]
     assert saved_times
     assert saved_times[0] == 0.5
@@ -162,7 +161,7 @@ def test_run_recorder_actor_warns_and_skips_when_no_ports(monkeypatch, tmp_path)
         lambda *a, **kw: called.append(True),
     )
 
-    run_recorder_actor(deserializer_for_port=lambda p: (lambda data: data))
+    run_recorder_actor(deserializer_for_port=lambda p: lambda data: data)
 
     assert called == []  # never got as far as building a collection
 
@@ -184,7 +183,7 @@ def test_run_recorder_actor_builds_collection_and_serves(monkeypatch, tmp_path):
         lambda inst, collection, ports: {},
     )
 
-    run_recorder_actor(deserializer_for_port=lambda p: (lambda data: data))
+    run_recorder_actor(deserializer_for_port=lambda p: lambda data: data)
 
     assert store_path.is_dir()
     assert (store_path / config.name).is_file()  # config snapshot was made
@@ -214,6 +213,6 @@ def test_run_recorder_actor_raises_and_reports_serve_errors(monkeypatch, tmp_pat
     )
 
     with pytest.raises(RuntimeError, match="a_in"):
-        run_recorder_actor(deserializer_for_port=lambda p: (lambda data: data))
+        run_recorder_actor(deserializer_for_port=lambda p: lambda data: data)
 
     instance.error_shutdown.assert_called_once()
