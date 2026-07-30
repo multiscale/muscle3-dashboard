@@ -28,6 +28,64 @@ pip install -e .[dev,graph]
 muscle_dashboard path/to/my/muscle/simulation/workdir
 ```
 
+# Recording your own actor's data
+
+Any MUSCLE3 actor can gain a live/replay Recorder tab in the dashboard by
+writing its traffic through `muscle3_dashboard.recorder` -- no dashboard-side
+configuration needed, since a recorder is recognised purely by its on-disk
+footprint.
+
+```bash
+pip install muscle3-dashboard[recording]
+```
+
+Bring two things: a `deserialize(bytes) -> your_message` function per port,
+and a `config` file defining `extract(message) -> dict[str, xarray.Dataset]`
+(or a `State` class -- see `muscle3_dashboard.visualization.base_state` --
+so the same file can double as a `Plotter` for live viewing). Everything
+else is generic:
+
+```python
+import functools
+from pathlib import Path
+
+from libmuscle import Instance, InstanceFlags
+from ymmsl.v0_2 import Operator
+
+from muscle3_dashboard.recorder.collection import RecorderCollection
+from muscle3_dashboard.recorder.zarr_recorder import ZarrRecorder
+
+
+def deserialize(port: str, data: bytes) -> "MyMessage":
+    ...  # bytes -> your own message type
+
+
+def main() -> None:
+    instance = Instance(flags=InstanceFlags.USES_CHECKPOINT_API)
+    while instance.reuse_instance():
+        ports = [
+            p for p in instance.list_ports().get(Operator.S, [])
+            if instance.is_connected(p)
+        ]
+        collection = RecorderCollection(
+            store_path=Path(instance.get_setting("store_path", "str")),
+            config=Path(instance.get_setting("config", "str")),
+            deserializers={p: functools.partial(deserialize, p) for p in ports},
+            make_recorder=ZarrRecorder,
+        )
+        for port in ports:
+            collection.handle(port, instance.receive(port))
+        collection.close()
+```
+
+`RecorderCollection` writes one live-tailable Zarr store per port per
+outer-loop iteration, snapshots `config` next to the data for provenance,
+and supports checkpoint/resume via `collection.get_state()`/
+`restore_state()`. For the full production pattern -- multiple ports
+drained independently, end-of-stream handling, and checkpointing wired up
+-- see `imas_muscle3.actors.recorder_component` for a complete reference
+implementation.
+
 # Legal
 
 Copyright 2026 ITER Organization. The code in this repository is licensed under the

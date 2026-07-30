@@ -36,8 +36,10 @@ recording = [
     "zarr",
     "holoviews",
     "param",
-    # Recorder.handle() takes a libmuscle Message -- only actors that
-    # actually record (and so already depend on muscle3) use this.
+    # Recorder.handle() takes a libmuscle Message, and recorder.actor's
+    # run_recorder_actor() is a full Instance-driven actor main() (also
+    # needs ymmsl, a transitive muscle3 dependency) -- only actors that
+    # actually record (and so already depend on muscle3) use these.
     "muscle3>=0.10",
 ]
 dev = [

@@ -1,36 +1,27 @@
-"""Tabs for recorder (tap) actors: their distilled data, their plots.
+"""Dashboard tabs for recorder (tap) actors: discover their data, plot it.
 
-A recorder actor (``distill`` format) taps a running simulation and writes
-one live-tailable Zarr store per *occurrence* (outer-loop iteration) under
-``instances/<rec>/workdir/<port>/<NNNN>.zarr``. When the run's settings point
-the recorder at a visualization plot file (``<rec>.config``, defining
-``State``/``Plotter`` classes), the same file tells this viewer how to render
-the stored data: the ``State`` defined what was recorded, the ``Plotter`` is
-loaded here to plot it — live while the run appends, or after it finished.
+A recorder actor (``distill`` format) writes one live-tailable Zarr store per
+occurrence (outer-loop iteration) under
+``instances/<rec>/workdir/<port>/<NNNN>.zarr``. This module finds those
+stores and builds a :class:`RecorderViewer` tab per recorder instance that
+renders them, live or after the run finishes.
 
-One more setting is honoured (optional, read from ``configuration.ymmsl``):
-a store's root attribute ``distill_profile`` (stamped by the recorder) is
-the fallback plot-file reference when ``<rec>.config`` is unavailable.
+Each tab is rendered by a *plot file* defining a ``State`` class (what was
+recorded) and a ``Plotter`` class (how to draw it). It's located via, in
+order: the recorder's own snapshot of it (``workdir/<plot file name>``,
+copied at start-up so the tab always matches the code that recorded the
+data), or else ``configuration.ymmsl`` (the ``<rec>.config`` setting, or a
+store's ``distill_profile`` attribute).
 
-This viewer has no domain of its own beyond MUSCLE3's own settings format --
-it doesn't know or care what a recorder's other settings mean. If the plot
-file defines an ``init_state(settings) -> dict`` function, this viewer calls
-it with every ``<rec>.*`` setting (prefix stripped) and passes the result to
-``State``'s constructor; that's the plot file's (and whatever domain package
-it imports) chance to turn its own settings into whatever ``State.__init__``
-expects. No ``init_state``, or no matching settings: ``State`` gets an empty
-dict, same as when there's nothing to configure.
+If the plot file defines ``init_state(settings) -> dict``, it's called with
+the recorder's ``<rec>.*`` settings (prefix stripped) to build the dict
+passed to ``State``'s constructor — the plot file's own chance to turn
+settings into whatever ``State`` expects. Otherwise ``State`` gets an empty
+dict.
 
-The recorder snapshots the plot file next to its data
-(``workdir/<plot file name>``, beside the port dirs) when it starts; that
-copy is preferred over the path from the settings, so the tab renders with
-the exact code that recorded the stores even if the original file was edited
-since.
-
-The plotting stack (xarray, zarr, holoviews, the plot file's own imports --
-which may themselves pull in a domain-specific package) is imported lazily
-per tab; a missing dependency degrades to a message pane instead of breaking
-the dashboard.
+The plotting stack (xarray, zarr, holoviews, the plot file's own imports) is
+imported lazily per tab, so a missing dependency degrades one tab to a
+message pane rather than breaking the dashboard.
 """
 
 import html
