@@ -1,8 +1,8 @@
-"""Owns the per-port recorders and live state for one recorder actor run:
-loads the shared extract/State config, snapshots it next to the data, and
-routes each received message to its port's :class:`~.base.Recorder`
-(writing to disk) and :class:`LiveState` (in-memory, a building block for
-optional in-actor plotting).
+"""Per-port recorders for one recorder actor run.
+
+Loads the shared extract/State config, snapshots it next to the data, and
+routes each message to its port's :class:`~.base.Recorder`, which writes it
+to disk.
 """
 
 import logging
@@ -22,7 +22,6 @@ from muscle3_dashboard.recorder.base import (
     RecorderFactory,
     RecorderState,
 )
-from muscle3_dashboard.recorder.zarr_recorder import _combine
 from muscle3_dashboard.visualization.base_state import BaseState
 
 logger = logging.getLogger()
@@ -33,58 +32,77 @@ def load_extract_config(
     fields: Collection[str] | None = None,
     automatic_extract: bool = False,
 ) -> ExtractFn:
-    """Load the extraction logic from a config file: either a callable
-    ``extract(message) -> dict[str, Dataset]``, or a ``State`` class (a plot
-    file), each message then going through a fresh instance.
+    """Load extraction logic from a config file.
 
-    If the file's ``State`` does not implement its own ``extract`` (e.g. it
-    exists only to hold data for the file's ``Plotter``), and
-    ``automatic_extract`` is true, extraction falls back to
-    :meth:`~muscle3_dashboard.visualization.base_state.BaseState.automatic_extract`
-    instead of raising. This is opt-in so a ``State`` that simply forgot to
-    implement ``extract`` still fails loudly rather than silently doing
-    something else -- and it works for whatever domain-specific
-    ``automatic_extract`` a subclass implements, generically.
+    The config file defines either a callable ``extract(message) ->
+    dict[str, Dataset]``, or a ``State`` class (a plot file) -- in which
+    case each message goes through a fresh ``State`` instance.
 
-    If ``fields`` is given, the result is restricted to those keys (as
-    returned by the config's own ``extract``/``automatic_extract``) --
-    for example to keep a recording focused on a handful of quantities
-    instead of everything discoverable.
+    A ``State`` that doesn't implement its own ``extract`` (e.g. it exists
+    only to hold data for the file's ``Plotter``) normally raises. Passing
+    ``automatic_extract=True`` opts in to falling back on
+    :meth:`~.visualization.base_state.BaseState.automatic_extract` instead,
+    so a ``State`` that simply forgot to implement ``extract`` still fails
+    loudly by default.
+
+    ``fields``, if given, restricts the result to those keys -- e.g. to
+    keep a recording focused on a handful of quantities.
     """
     namespace = runpy.run_path(config_path)
+    raw_extract = _resolve_extract_fn(namespace, config_path, automatic_extract)
+    return _restrict_to_fields(raw_extract, fields)
+
+
+def _resolve_extract_fn(
+    namespace: dict[str, Any], config_path: str, automatic_extract: bool
+) -> ExtractFn:
+    """The config's own ``extract``, or one derived from its ``State``
+    class (see :func:`load_extract_config`)."""
     extract = namespace.get("extract")
     if extract is not None and callable(extract):
-        raw_extract = extract
-    else:
-        state_class = namespace.get("State")
-        if not (
-            state_class is not None
-            and isinstance(state_class, type)
-            and issubclass(state_class, BaseState)
-        ):
-            raise NameError(
-                f"{config_path} must define a callable 'extract(message)' "
-                f"returning a mapping of name -> xarray.Dataset, or a "
-                f"'State' class inheriting from BaseState."
-            )
-        if state_class.extract is BaseState.extract:
-            if not automatic_extract:
-                raise NameError(
-                    f"{config_path}'s 'State' class does not implement "
-                    f"'extract'. Either implement it, or set "
-                    f"'automatic_extract: true' to fill in automatic "
-                    f"extraction instead."
-                )
-            raw_extract = _automatic_extract_via(state_class)
-        else:
+        return extract
 
-            def extract_via_state(message: Any) -> dict[str, xr.Dataset]:
-                state = state_class({})
-                state.extract(message)
-                return dict(state.data)
+    state_class = namespace.get("State")
+    if not (
+        state_class is not None
+        and isinstance(state_class, type)
+        and issubclass(state_class, BaseState)
+    ):
+        raise NameError(
+            f"{config_path} must define a callable 'extract(message)' "
+            f"returning a mapping of name -> xarray.Dataset, or a "
+            f"'State' class inheriting from BaseState."
+        )
+    if state_class.extract is not BaseState.extract:
+        return _extract_via_state(state_class)
 
-            raw_extract = extract_via_state
+    if not automatic_extract:
+        raise NameError(
+            f"{config_path}'s 'State' class does not implement "
+            f"'extract'. Either implement it, or set "
+            f"'automatic_extract: true' to fill in automatic "
+            f"extraction instead."
+        )
+    return _automatic_extract_via(state_class)
 
+
+def _extract_via_state(state_class: type) -> ExtractFn:
+    """An :data:`~.base.ExtractFn` that runs a message through a fresh
+    ``state_class`` instance and returns what it collected."""
+
+    def extract_via_state(message: Any) -> dict[str, xr.Dataset]:
+        state = state_class({})
+        state.extract(message)
+        return dict(state.data)
+
+    return extract_via_state
+
+
+def _restrict_to_fields(
+    raw_extract: ExtractFn, fields: Collection[str] | None
+) -> ExtractFn:
+    """Wrap ``raw_extract`` to keep only the given ``fields``, or return it
+    unchanged if none were given."""
     if not fields:
         return raw_extract
 
@@ -97,14 +115,12 @@ def load_extract_config(
 
 
 def _automatic_extract_via(state_class: type) -> ExtractFn:
-    """An :data:`~.base.ExtractFn` that fills in extraction via a
-    domain-specific ``BaseState.automatic_extract`` for a ``State`` that
-    doesn't implement its own ``extract``.
+    """Build an :data:`~.base.ExtractFn` from ``state_class.automatic_extract``.
 
-    Zarr rejects ``/`` in a variable name, and ``automatic_extract``
-    implementations commonly use full paths built from one (e.g. a source
-    name and a field path), so any ``/`` is flattened to ``.`` first, both
-    as the returned dict's keys and as each dataset's data variable name(s).
+    Zarr rejects ``/`` in variable names, and ``automatic_extract`` commonly
+    builds paths containing one (e.g. source name + field path), so any
+    ``/`` is flattened to ``.`` in both the returned keys and each dataset's
+    data variable names.
     """
 
     def extract(data: Any) -> dict[str, xr.Dataset]:
@@ -143,24 +159,9 @@ def snapshot_config(config: Path, store_path: Path) -> Path:
         return config
 
 
-class LiveState:
-    """Accumulates one port's extracted datasets in memory as they arrive --
-    live-tailable like a visualization actor's ``State``. A building
-    block for optional in-actor plotting (not wired up to a server yet)."""
-
-    def __init__(self) -> None:
-        self.data: dict[str, xr.Dataset] = {}
-
-    def update(self, datasets: dict[str, xr.Dataset]) -> None:
-        for name, ds in datasets.items():
-            self.data[name] = (
-                _combine([self.data[name], ds]) if name in self.data else ds
-            )
-
-
 class RecorderCollection:
-    """One :class:`~.base.Recorder` and one :class:`LiveState` per
-    connected port, sharing a single config file."""
+    """One :class:`~.base.Recorder` per connected port, sharing a single
+    config file."""
 
     def __init__(
         self,
@@ -173,9 +174,6 @@ class RecorderCollection:
     ) -> None:
         self.extract = load_extract_config(str(config), fields, automatic_extract)
         self.config_snapshot = snapshot_config(config, store_path)
-        self.live_state: dict[str, LiveState] = {
-            port: LiveState() for port in deserializers
-        }
         self._recorders: dict[str, Recorder] = {
             port: make_recorder(
                 store_path / port,
@@ -187,11 +185,9 @@ class RecorderCollection:
         }
 
     def handle(self, port: str, msg: Message) -> str:
-        """Write ``msg`` via ``port``'s recorder and fold it into that
-        port's live state; returns a short detail to log."""
-        detail, datasets = self._recorders[port].handle(msg)
-        self.live_state[port].update(datasets)
-        return detail
+        """Write ``msg`` via ``port``'s recorder; returns a short detail to
+        log."""
+        return self._recorders[port].handle(msg)
 
     def close(self) -> None:
         for recorder in self._recorders.values():
@@ -199,8 +195,7 @@ class RecorderCollection:
 
     def get_state(self) -> dict[str, RecorderState]:
         """Every port's :class:`~.base.Recorder` bookkeeping, for a
-        checkpoint. Live state is excluded: it's an in-memory-only building
-        block for future plotting, not something a resume needs to restore."""
+        checkpoint."""
         return {port: rec.get_state() for port, rec in self._recorders.items()}
 
     def restore_state(self, state: dict[str, RecorderState]) -> None:

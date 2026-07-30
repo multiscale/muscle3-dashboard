@@ -51,9 +51,10 @@ def group_name(full_path: str) -> str:
 
 
 def _signature(ds: xr.Dataset) -> tuple:
-    """Schema fingerprint: which quantities, on what non-time grid. Only a
-    matching signature may be appended -- ``to_zarr`` does *not* reject a
-    mismatched append, it silently corrupts the store."""
+    """A fingerprint of a dataset's schema: which variables it has, and the
+    shape of its non-time grid. Two datasets can only be appended together
+    if their signatures match -- ``to_zarr`` does not reject a mismatched
+    append, it silently corrupts the store."""
     names = frozenset(map(str, ds.data_vars))
     dims = tuple(sorted((str(d), int(s)) for d, s in ds.sizes.items() if d != _TIME))
     coords = tuple(
@@ -92,8 +93,10 @@ def _combine(parts: list[xr.Dataset]) -> xr.Dataset:
 
 
 class ZarrRecorder(Recorder):
-    """Appends one port's extracted datasets to a Zarr store per occurrence;
-    each message's schema is kept in memory as rebuild source until close."""
+    """Appends one port's extracted datasets to a Zarr store per occurrence.
+
+    Every message is also kept in memory, so a group can be rebuilt from
+    scratch if a later message's schema no longer matches what's on disk."""
 
     _store: str
     _buffers: dict[str, list[xr.Dataset]]
@@ -105,12 +108,12 @@ class ZarrRecorder(Recorder):
         self._sig = {}
 
     def _reopen_occurrence(self, base: Path) -> None:
-        """Resume an occurrence that was still open at checkpoint time:
-        reopen it, then rehydrate each existing group's rebuild buffer from
-        what's already on disk (the durable source of truth) rather than
-        duplicating it into the checkpoint. A later schema mismatch can
-        then still rebuild from the full history, not just what's arrived
-        since the resume."""
+        """Resume an occurrence that was still open at checkpoint time.
+
+        Reopens the store, then reloads each group's data from disk into
+        its rebuild buffer, instead of saving that buffer in the checkpoint
+        itself. That way, a later schema mismatch can still rebuild from
+        the group's full history, not just what arrived since the resume."""
         self._open_occurrence(base)
         store = Path(self._store)
         if not store.exists():

@@ -30,7 +30,6 @@ from pathlib import Path
 import panel as pn
 from tornado.netutil import bind_unix_socket
 
-from muscle3_dashboard.constants import IDLE_SHUTDOWN_SECONDS
 from muscle3_dashboard.m3dash.discovery import (
     MANAGER_LOG,
     Run,
@@ -286,54 +285,6 @@ def _origins(port: int) -> list[str]:
     return [f"localhost:{port}", f"127.0.0.1:{port}"]
 
 
-def _watch_for_idle_shutdown(server) -> None:
-    """Stop `server` once it's had no viewers for IDLE_SHUTDOWN_SECONDS.
-
-    ``m3dash open`` binds a fixed, per-user port (see cli.py), so a server
-    nobody closed sits there and blocks the next launch. Rather than have
-    the next launch reclaim someone else's port, an unused server closes
-    itself: the countdown starts at boot (covers "nobody ever connected")
-    and restarts each time the last remaining viewer disconnects.
-    """
-    active_sessions = 0
-    lock = threading.Lock()
-    shutdown_timer: threading.Timer | None = None
-
-    def fire_if_still_idle() -> None:
-        with lock:
-            if active_sessions == 0:
-                logger.info(
-                    "No viewers for %ds, shutting down idle m3dash server",
-                    IDLE_SHUTDOWN_SECONDS,
-                )
-                server.io_loop.add_callback(server.io_loop.stop)
-
-    def schedule() -> None:
-        nonlocal shutdown_timer
-        shutdown_timer = threading.Timer(IDLE_SHUTDOWN_SECONDS, fire_if_still_idle)
-        shutdown_timer.daemon = True
-        shutdown_timer.start()
-
-    def session_created(context) -> None:
-        nonlocal active_sessions, shutdown_timer
-        with lock:
-            active_sessions += 1
-            if shutdown_timer is not None:
-                shutdown_timer.cancel()
-                shutdown_timer = None
-
-    def session_destroyed(context) -> None:
-        nonlocal active_sessions
-        with lock:
-            active_sessions -= 1
-            if active_sessions == 0:
-                schedule()
-
-    pn.state.on_session_created(session_created)
-    pn.state.on_session_destroyed(session_destroyed)
-    schedule()
-
-
 def serve(
     socket_path: Path | None,
     roots: list[Path],
@@ -373,7 +324,6 @@ def serve(
         start=False,
         threaded=False,
     )
-    _watch_for_idle_shutdown(server)
     if socket_path is not None:
         _claim_socket(socket_path)
         socket_path.parent.mkdir(parents=True, exist_ok=True)

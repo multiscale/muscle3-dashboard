@@ -1,5 +1,6 @@
 import html
 import threading
+from contextlib import suppress
 from datetime import datetime
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version
@@ -25,22 +26,18 @@ pn.extension("tabulator", design="material", sizing_mode="stretch_width")
 
 
 def _warm_up_colorcet() -> None:
-    """Pay colorcet's colormap-registration cost now instead of on a user's
+    """Import ``colorcet`` now, in the background, instead of on a user's
     click.
 
     Recorder tabs (``components/recorder_viewer.py``) build HoloViews plots
-    that reference named colormaps (e.g. ``cmap="viridis"``); resolving one
-    lazily imports ``colorcet``, and colormap registration against this
-    matplotlib version is pathologically slow (~10s, seen via profiling: each
-    of colorcet's ~420 colormaps triggers an O(n) difflib suggestion lookup
-    against the growing registry). The import is cached process-wide, so
-    doing it here in a background thread at server start means whichever
-    user clicks a recorder tab first no longer eats that one-off cost.
+    with named colormaps (e.g. ``cmap="viridis"``), which lazily imports
+    ``colorcet`` -- and registering its colormaps takes several seconds on
+    this matplotlib version. The import is cached process-wide, so doing it
+    here at server start means whoever opens a recorder tab first doesn't
+    have to pay that cost.
     """
-    try:
+    with suppress(ImportError):
         import colorcet  # noqa: F401
-    except ImportError:
-        pass
 
 
 threading.Thread(target=_warm_up_colorcet, daemon=True).start()

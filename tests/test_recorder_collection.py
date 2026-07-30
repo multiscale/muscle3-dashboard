@@ -1,9 +1,7 @@
-import xarray as xr
 from libmuscle import Message
 
 from muscle3_dashboard.recorder.base import Recorder
 from muscle3_dashboard.recorder.collection import (
-    LiveState,
     RecorderCollection,
     load_extract_config,
     snapshot_config,
@@ -143,21 +141,6 @@ def test_snapshot_config_copies_next_to_data(tmp_path):
     assert snapshot_config(snapshot, store_path) == snapshot
 
 
-# --- live state --------------------------------------------------------------
-
-
-def _ds(t, value):
-    return xr.Dataset({"v": ("time", [value])}, coords={"time": [t]})
-
-
-def test_live_state_accumulates_along_time():
-    state = LiveState()
-    state.update({"equilibrium": _ds(0.0, 1.0)})
-    state.update({"equilibrium": _ds(1.0, 2.0)})
-    assert list(state.data["equilibrium"].time.values) == [0.0, 1.0]
-    assert list(state.data["equilibrium"]["v"].values) == [1.0, 2.0]
-
-
 # --- collection wiring -------------------------------------------------------
 
 _CONFIG = """
@@ -192,7 +175,7 @@ class _RecordingRecorder(Recorder):
         pass
 
 
-def test_collection_routes_per_port_and_updates_live_state(tmp_path):
+def test_collection_routes_per_port(tmp_path):
     config = tmp_path / "config.py"
     config.write_text(_CONFIG)
     store_path = tmp_path / "store"
@@ -206,8 +189,6 @@ def test_collection_routes_per_port_and_updates_live_state(tmp_path):
         store_path, config, {"equilibrium_in": lambda data: data}, make_recorder
     )
     assert collection.config_snapshot == store_path / "config.py"
-    assert set(collection.live_state) == {"equilibrium_in"}
-    assert collection.live_state["equilibrium_in"].data == {}
 
 
 def test_collection_fields_restrict_what_gets_recorded(tmp_path):
@@ -231,4 +212,3 @@ def test_collection_fields_restrict_what_gets_recorded(tmp_path):
 
     assert len(log) == 1
     assert set(log[0]) == {"a"}
-    assert set(collection.live_state["equilibrium_in"].data) == {"a"}

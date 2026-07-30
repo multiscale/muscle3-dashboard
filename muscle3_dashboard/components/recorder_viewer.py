@@ -7,11 +7,11 @@ stores and builds a :class:`RecorderViewer` tab per recorder instance that
 renders them, live or after the run finishes.
 
 Each tab is rendered by a *plot file* defining a ``State`` class (what was
-recorded) and a ``Plotter`` class (how to draw it). It's located via, in
-order: the recorder's own snapshot of it (``workdir/<plot file name>``,
-copied at start-up so the tab always matches the code that recorded the
-data), or else ``configuration.ymmsl`` (the ``<rec>.config`` setting, or a
-store's ``distill_profile`` attribute).
+recorded) and a ``Plotter`` class (how to draw it). It's located by
+checking, in order: the recorder's own snapshot of it (``workdir/<plot file
+name>``, copied at start-up so the tab always matches the code that
+recorded the data), then ``configuration.ymmsl`` (the ``<rec>.config``
+setting), then a store's ``distill_profile`` attribute.
 
 If the plot file defines ``init_state(settings) -> dict``, it's called with
 the recorder's ``<rec>.*`` settings (prefix stripped) to build the dict

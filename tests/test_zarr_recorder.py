@@ -112,10 +112,9 @@ def test_zarr_recorder_combines_gaps(tmp_path):
 
 
 def test_reopen_occurrence_rehydrates_buffer_for_later_rebuild(tmp_path):
-    """A schema mismatch after resume must still rebuild from the FULL
+    """A schema mismatch after resume must still rebuild from the full
     history, including messages written before the checkpoint -- not just
-    what arrived since. Regression test for silently losing pre-checkpoint
-    data on a post-resume rebuild."""
+    what arrived since."""
     # Before the (simulated) checkpoint: one message on disk, no _close.
     rec1 = _open(tmp_path, "0000")
     rec1._append("x/y", _single_1d(0.0, np.ones(8)))

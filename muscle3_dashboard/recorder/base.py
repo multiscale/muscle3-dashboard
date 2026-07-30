@@ -1,9 +1,11 @@
-"""Recorder base class: one instance per connected port, deserializing and
-extracting each received message via the shared config logic (see
-:mod:`.collection`) and writing it to disk, one store per outer-loop
-iteration, rolling to a new occurrence on a stream restart (a message with
-no ``next_timestamp``, or time stepping backwards). The on-disk format is
-left to a subclass, e.g. :class:`~.zarr_recorder.ZarrRecorder`.
+"""Recorder base class: one instance per connected port.
+
+It deserializes and extracts each received message using the shared config
+logic (see :mod:`.collection`), then writes it to disk -- one store per
+outer-loop iteration, rolling over to a new occurrence on a stream restart
+(a message with no ``next_timestamp``, or time stepping backwards). The
+on-disk format itself is left to a subclass, e.g.
+:class:`~.zarr_recorder.ZarrRecorder`.
 """
 
 from abc import ABC, abstractmethod
@@ -56,9 +58,8 @@ class Recorder(ABC):
             "is_open": False,
         }
 
-    def handle(self, msg: Message) -> tuple[str, dict[str, xr.Dataset]]:
-        """Extract and write one message. Returns a short detail to log and
-        the datasets it extracted, for the caller's live state."""
+    def handle(self, msg: Message) -> str:
+        """Extract and write one message. Returns a short detail to log."""
         state = self._state
         restarted = state["prev_ended"] or (
             state["last_time"] is not None and msg.timestamp < state["last_time"]
@@ -76,7 +77,7 @@ class Recorder(ABC):
         detail = self._write(datasets)
         state["last_time"] = msg.timestamp
         state["prev_ended"] = msg.next_timestamp is None
-        return detail, datasets
+        return detail
 
     def close(self) -> None:
         """Finalize the currently open occurrence, if any (an empty

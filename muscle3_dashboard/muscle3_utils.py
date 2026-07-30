@@ -2,7 +2,7 @@
 :mod:`.recorder.actor` and available to any actor that wants them.
 """
 
-from typing import Optional, TypeVar, cast
+from typing import TypeVar, cast
 
 from libmuscle import Instance
 from ymmsl.v0_2 import Operator, SettingValue
@@ -13,8 +13,8 @@ TSetting = TypeVar("TSetting", bound=SettingValue)
 def get_setting_optional(
     instance: Instance,
     setting_name: str,
-    default: Optional[TSetting] = None,
-) -> Optional[TSetting]:
+    default: TSetting | None = None,
+) -> TSetting | None:
     """Read an optional setting from `instance`.
 
     libmuscle's Instance.get_setting(default=...) cannot distinguish "no

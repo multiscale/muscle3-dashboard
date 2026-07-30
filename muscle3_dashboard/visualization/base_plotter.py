@@ -45,6 +45,19 @@ class BasePlotter(Viewer):
         self._frozen_state: BaseState | None = None
         self.active_state: BaseState = state
 
+        controls = self._build_controls()
+        plots = self.get_dashboard()
+        self.float_panels = pn.Column(sizing_mode="stretch_width")
+
+        ui = pn.Row()
+        if state.auto:
+            ui.append(self._build_automatic_controls())
+        ui.append(controls)
+        self._panel = pn.Column(ui, plots, self.float_panels)
+
+    def _build_controls(self) -> Viewable:
+        """The always-present live-view toggle, time slider and time
+        label."""
         self.live_view_checkbox = pn.widgets.Checkbox.from_param(self.param._live_view)
         self.time_slider_widget = pn.widgets.DiscretePlayer.from_param(
             self.param.time,
@@ -57,49 +70,32 @@ class BasePlotter(Viewer):
         self.time_label = pn.pane.Markdown(  # type: ignore[no-untyped-call]
             visible=self.param._live_view.rx.bool()
         )
-        controls = pn.Row(
-            self.live_view_checkbox, self.time_slider_widget, self.time_label
+        return pn.Row(self.live_view_checkbox, self.time_slider_widget, self.time_label)
+
+    def _build_automatic_controls(self) -> Viewable:
+        """The variable picker, filter box and add/close-all-plots buttons
+        shown when the state supports automatic discovery (``state.auto``)."""
+        self.variable_selector = pn.widgets.Select(width=400)  # type: ignore
+        add_plot_button = pn.widgets.Button(  # type: ignore
+            name="Add Plot",
+            button_type="primary",
+            on_click=self._add_plot_callback,
         )
-        plots = self.get_dashboard()
-        self.float_panels = pn.Column(sizing_mode="stretch_width")
-
-        ui = pn.Row()
-
-        # Add UI elements for automatic mic
-        if state.auto:
-            self.variable_selector = pn.widgets.Select(  # type: ignore
-                width=400
-            )
-            add_plot_button = pn.widgets.Button(  # type: ignore
-                name="Add Plot",
-                button_type="primary",
-                on_click=self._add_plot_callback,
-            )
-            close_all_button = pn.widgets.Button(  # type: ignore
-                name="Close All Plots",
-                button_type="danger",
-                on_click=self._close_all_plots_callback,
-            )
-            self.plotting_controls = pn.Row(
-                self.variable_selector,
-                add_plot_button,
-                close_all_button,
-                sizing_mode="stretch_width",
-                align="center",
-            )
-            self.filter_input = pn.widgets.TextInput(  # type: ignore
-                placeholder="Filter...",
-                width=400,
-            )
-            self.filter_input.param.watch(self._update_filter_view, "value_input")
-            automatic_ui = pn.Column(
-                self.filter_input,
-                self.variable_selector,
-                pn.Row(add_plot_button, close_all_button),
-            )
-            ui.append(automatic_ui)
-        ui.append(controls)
-        self._panel = pn.Column(ui, plots, self.float_panels)
+        close_all_button = pn.widgets.Button(  # type: ignore
+            name="Close All Plots",
+            button_type="danger",
+            on_click=self._close_all_plots_callback,
+        )
+        self.filter_input = pn.widgets.TextInput(  # type: ignore
+            placeholder="Filter...",
+            width=400,
+        )
+        self.filter_input.param.watch(self._update_filter_view, "value_input")
+        return pn.Column(
+            self.filter_input,
+            self.variable_selector,
+            pn.Row(add_plot_button, close_all_button),
+        )
 
     def get_dashboard(self) -> Viewable:
         """Return Panel layout for the visualization."""

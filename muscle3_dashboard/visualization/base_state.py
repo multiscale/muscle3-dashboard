@@ -66,36 +66,23 @@ class BaseState(param.Parameterized):
         self._discovery_done: set[str] = set()
 
     def extract_data(self, message: Any) -> None:
-        """Extract data from a received message and store it into the data
-        object.
-
-        Args:
-            message: The message to extract data from.
-        """
+        """Extract data from a received message and store it in ``data``."""
         if self.auto:
             self.automatic_extract(message)
         self.extract(message)
 
     def extract(self, message: Any) -> None:
-        """Extract data from a received message and store it into the data
-        object. Must be implemented by subclasses.
-
-        Args:
-            message: The message to extract data from.
-        """
+        """Extract data from a received message and store it in ``data``.
+        Must be implemented by a subclass."""
         raise NotImplementedError(
             "A state class needs to implement an `extract` method"
         )
 
     def automatic_extract(self, message: Any) -> None:
-        """Automatically discover and extract quantities from a received
-        message, with no domain-specific code of its own. Must be
-        implemented by a domain-specific subclass to be usable -- there is
-        no generic way to discover quantities in an arbitrary message.
-
-        Args:
-            message: The message to extract data from.
-        """
+        """Discover and extract quantities from a received message with no
+        domain-specific code of its own. There's no generic way to do this
+        for an arbitrary message format, so a domain-specific subclass must
+        implement it before this can be used."""
         raise NotImplementedError(
             "Automatic extraction needs a domain-specific subclass "
             "implementing `automatic_extract`."
