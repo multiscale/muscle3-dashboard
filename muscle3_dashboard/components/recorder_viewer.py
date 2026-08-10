@@ -262,7 +262,7 @@ class RecorderViewer(Viewer):
     def _load_data(self, occurrence: str) -> dict:
         """``group -> Dataset`` for one occurrence, across all port stores.
 
-        Datasets are opened lazily (no dask): the state holds views into the
+        Datasets are opened lazily: the state holds views into the
         stores and the plots pull values on render, so a check-and-push cycle
         stays cheap.
         """

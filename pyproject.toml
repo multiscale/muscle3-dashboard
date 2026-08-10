@@ -22,24 +22,17 @@ requires-python = ">=3.11"
 
 [project.optional-dependencies]
 graph = [
-    # Renders the simulation graph card from configuration.ymmsl.
-    # Not on PyPI yet (depends on an unreleased ymmsl-python); pulled from git.
+    # Renders the simulation graph card; not on PyPI yet, pulled from git.
     "ymmsl2svg @ git+https://github.com/DaanVanVugt/ymmsl2svg.git@feat/conduit-hover-labels",
 ]
 recording = [
-    # State/Plotter and the Zarr-backed recorder: the shared, domain-agnostic
-    # base that any actor wanting a live/replay recorder tab builds on.
-    # Optional because the rest of the dashboard (log viewer, graph, m3dash)
-    # needs none of this; imported lazily so it stays that way.
+    # Shared State/Plotter + Zarr recorder base for live/replay tabs.
     "numpy",
     "xarray",
     "zarr",
     "holoviews",
     "param",
-    # Recorder.handle() takes a libmuscle Message, and recorder.actor's
-    # run_recorder_actor() is a full Instance-driven actor main() (also
-    # needs ymmsl, a transitive muscle3 dependency) -- only actors that
-    # actually record (and so already depend on muscle3) use these.
+    # Recorder.handle()/run_recorder_actor() need a real muscle3 actor runtime.
     "muscle3>=0.10",
 ]
 dev = [
