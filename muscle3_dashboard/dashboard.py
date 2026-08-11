@@ -12,6 +12,7 @@ from muscle3_dashboard.components.log_files import LogFilesViewer
 from muscle3_dashboard.components.profiling_information import (
     ProfilingInformationViewer,
 )
+from muscle3_dashboard.components.recorder_viewer import recorder_tabs
 from muscle3_dashboard.components.ymmsl_graph import YmmslGraphViewer
 from muscle3_dashboard.data_manager import DataManager
 from muscle3_dashboard.instances import base_name
@@ -22,6 +23,7 @@ from muscle3_dashboard.pathlink import path_html
 # "tabulator" extension: it pulls a large JS/CSS bundle into every page's first
 # load and nothing on the run page uses a Tabulator.)
 pn.extension(design="material", sizing_mode="stretch_width")
+
 
 #: Header status-dot colours, light Material shades for the dark header.
 _STATE_COLORS = {
@@ -89,18 +91,28 @@ class Dashboard(pn.viewable.Viewer):
         self._auto_opened = False
         self.data_manager.param.watch(self._auto_open_crash, "data_updated")
 
-        # Single page, top to bottom: a crash banner (only on failure), the
+        # Run page, top to bottom: a crash banner (only on failure), the
         # simulation graph (components coloured by status, click one for its
         # summary + logs), the clicked component's summary, then the log files.
-        self.template.main.append(
-            pn.Column(
-                self.crash_analysis_viewer,
-                self.ymmsl_graph_viewer,
-                self.component_summary_viewer,
-                self.log_files_viewer,
-                sizing_mode="stretch_width",
-            )
+        run_page = pn.Column(
+            self.crash_analysis_viewer,
+            self.ymmsl_graph_viewer,
+            self.component_summary_viewer,
+            self.log_files_viewer,
+            sizing_mode="stretch_width",
         )
+        # A run with recorder (tap) actors additionally gets one tab per
+        # recorder, rendering its distilled stores with the run's plot file
+        # (see components/recorder_viewer.py). Recorders are re-discovered on
+        # every log poll, so a tab appears live the moment a recorder writes
+        # its first store; without recorders the page stays untabbed.
+        self._run_page = run_page
+        self._tabs: pn.Tabs | None = None
+        self._recorder_names: set[str] = set()
+        self._main_area = pn.Column(run_page, sizing_mode="stretch_width")
+        self.template.main.append(self._main_area)
+        self._sync_recorder_tabs()
+        self.data_manager.param.watch(self._sync_recorder_tabs, "data_updated")
 
         # Populate everything once (reads the logs, colours the graph, and
         # auto-opens the responsible component's log for an already-crashed run).
@@ -146,6 +158,23 @@ class Dashboard(pn.viewable.Viewer):
 
     def _update_header(self, event) -> None:
         self.header_pane.object = self._header_html()
+
+    def _sync_recorder_tabs(self, event=None) -> None:
+        """Add a tab for any recorder instance that has started writing.
+
+        The first recorder swaps the plain run page for a tabbed layout;
+        later ones append. Existing tabs are never rebuilt (their viewers
+        poll their own stores), so this is a cheap directory scan per poll.
+        """
+        added = recorder_tabs(self.run_folder, skip=self._recorder_names)
+        if not added:
+            return
+        if self._tabs is None:
+            self._tabs = pn.Tabs(("Run", self._run_page), dynamic=True)
+            self._main_area.objects = [self._tabs]
+        for name, viewer in added:
+            self._recorder_names.add(name)
+            self._tabs.append((name, viewer))
 
     def _responsible_component(self) -> str | None:
         """Base name of the likely-responsible crashed component, if any.
