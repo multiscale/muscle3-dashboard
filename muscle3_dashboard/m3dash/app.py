@@ -85,18 +85,30 @@ _index: RunIndex | None = None
 
 
 def _prewarm() -> None:
-    """Import the run-page modules ahead of the first request.
+    """Import the run-page and recorder-tab modules ahead of the first request.
 
     ``run_app`` imports the dashboard lazily so the landing page stays light,
-    but that import (Panel + ymmsl2svg + pandas + bokeh) takes ~1.5 s, paid by
-    whoever first opens a run. Doing it in a background thread at startup means
-    the import is already cached (or in progress, behind the import lock) by the
-    time a run is opened, without delaying the server or the landing page.
+    and recorder tabs (see ``components/recorder_viewer.py``) lazily import
+    holoviews/xarray/zarr per tab so a missing dependency degrades one tab
+    rather than the whole dashboard. Both are otherwise paid by whoever
+    first triggers them -- on a network filesystem, cold imports of these
+    packages can run into the seconds. Doing it in a background thread at
+    startup means the imports are already cached (or in progress, behind the
+    import lock) by the time a run or a plot tab is opened, without delaying
+    the server or the landing page.
     """
     try:
         import muscle3_dashboard.dashboard  # noqa: F401
     except Exception:
         logger.exception("Dashboard pre-warm import failed")
+    try:
+        import holoviews as hv
+
+        hv.extension("bokeh")
+        import xarray  # noqa: F401
+        import zarr  # noqa: F401
+    except Exception:
+        logger.exception("Recorder-tab pre-warm import failed")
 
 
 def _age(timestamp: datetime | None) -> str:
