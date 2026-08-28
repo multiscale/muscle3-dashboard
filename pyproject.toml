@@ -49,7 +49,6 @@ where = ["."]
 include = ["muscle3_dashboard*"]
 
 [project.scripts]
-muscle_dashboard = "muscle3_dashboard.cli:main"
 m3dash = "muscle3_dashboard.m3dash.cli:main"
 
 [tool.setuptools_scm]

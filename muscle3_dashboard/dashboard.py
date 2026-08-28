@@ -63,6 +63,8 @@ class Dashboard(pn.viewable.Viewer):
 
         self.template = pn.template.MaterialTemplate(
             collapsed_sidebar=True,
+            site="m3dash",
+            site_url="/",
             title=f"MUSCLE3 Dashboard | {_dashboard_version()}",
         )
 
