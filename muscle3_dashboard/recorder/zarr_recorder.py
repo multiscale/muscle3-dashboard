@@ -161,6 +161,7 @@ class ZarrRecorder(Recorder):
             logger.exception("failed writing group '%s'", group)
 
     def _close_occurrence(self) -> None:
+        self._rechunk()
         self._buffers.clear()
         self._sig.clear()
         # Lets a viewer group stores and load the matching config.
@@ -171,3 +172,16 @@ class ZarrRecorder(Recorder):
                 "distill_profile": self._profile,
             },
         )
+
+    def _rechunk(self) -> None:
+        """Collapses each group's many one-message-sized chunks into a single
+        chunk per variable, now that the occurrence's full history is known
+        and fits comfortably in memory. Cuts on-disk file count by orders of
+        magnitude without changing the data or its logical shape."""
+        for group in self._buffers:
+            ds = xr.open_zarr(self._store, group=group, consolidated=False).load()
+            # Loading doesn't clear each variable's original per-append chunk
+            # shape; left alone, to_zarr would reproduce the same tiny chunks.
+            for var in ds.variables.values():
+                var.encoding.pop("chunks", None)
+            ds.to_zarr(self._store, group=group, mode="w", consolidated=False)
