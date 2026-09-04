@@ -25,6 +25,11 @@ logger = logging.getLogger()
 #: The time dimension every extracted dataset shares (see :mod:`.collection`).
 _TIME = "time"
 
+#: Messages between mid-run rechunks. Bounds how many tiny one-message
+#: chunks a live viewer ever has to open at once, without rewriting the
+#: whole group's history on every single append.
+_RECHUNK_EVERY = 50
+
 
 def write_root_attrs(store_path: Path, attrs: Mapping[str, Any]) -> None:
     """Stamp metadata onto a store's root group. A no-op if the store does
@@ -101,11 +106,13 @@ class ZarrRecorder(Recorder):
     _store: str
     _buffers: dict[str, list[xr.Dataset]]
     _sig: dict[str, tuple]
+    _appends_since_rechunk: dict[str, int]
 
     def _open_occurrence(self, base: Path) -> None:
         self._store = str(base.with_suffix(".zarr"))
         self._buffers = {}
         self._sig = {}
+        self._appends_since_rechunk = {}
 
     def _reopen_occurrence(self, base: Path) -> None:
         """Resume an occurrence that was still open at checkpoint time.
@@ -146,9 +153,15 @@ class ZarrRecorder(Recorder):
         if len(parts) == 1:
             ds.to_zarr(self._store, group=group, mode="w", consolidated=False)
             self._sig[group] = sig
+            self._appends_since_rechunk[group] = 0
             return
         if sig == self._sig[group]:
             ds.to_zarr(self._store, group=group, append_dim=_TIME, consolidated=False)
+            self._appends_since_rechunk[group] = (
+                self._appends_since_rechunk.get(group, 0) + 1
+            )
+            if self._appends_since_rechunk[group] >= _RECHUNK_EVERY:
+                self._rechunk_group(group)
             return
         # Schema changed: clear the group dir (no stale arrays from the old
         # schema) and rewrite it from all messages.
@@ -161,9 +174,11 @@ class ZarrRecorder(Recorder):
             logger.exception("failed writing group '%s'", group)
 
     def _close_occurrence(self) -> None:
-        self._rechunk()
+        for group in self._buffers:
+            self._rechunk_group(group)
         self._buffers.clear()
         self._sig.clear()
+        self._appends_since_rechunk.clear()
         # Lets a viewer group stores and load the matching config.
         write_root_attrs(
             Path(self._store),
@@ -173,15 +188,22 @@ class ZarrRecorder(Recorder):
             },
         )
 
-    def _rechunk(self) -> None:
-        """Collapses each group's many one-message-sized chunks into a single
-        chunk per variable, now that the occurrence's full history is known
-        and fits comfortably in memory. Cuts on-disk file count by orders of
-        magnitude without changing the data or its logical shape."""
-        for group in self._buffers:
-            ds = xr.open_zarr(self._store, group=group, consolidated=False).load()
-            # Loading doesn't clear each variable's original per-append chunk
-            # shape; left alone, to_zarr would reproduce the same tiny chunks.
-            for var in ds.variables.values():
-                var.encoding.pop("chunks", None)
-            ds.to_zarr(self._store, group=group, mode="w", consolidated=False)
+    def _rechunk_group(self, group: str) -> None:
+        """Collapses a group's many one-message-sized chunks into a single
+        chunk per variable, now that its history so far fits comfortably in
+        memory. Cuts on-disk file count by orders of magnitude without
+        changing the data or its logical shape.
+
+        Called periodically during a run (every :data:`_RECHUNK_EVERY`
+        appends) so a live viewer never has to open more than a bounded
+        number of tiny chunks, and once more per group at occurrence close.
+        """
+        ds = xr.open_zarr(self._store, group=group, consolidated=False).load()
+        # Loading doesn't clear each variable's original per-append chunk
+        # shape; left alone, to_zarr would reproduce the same tiny chunks.
+        for var in ds.variables.values():
+            var.encoding.pop("chunks", None)
+        ds.to_zarr(self._store, group=group, mode="w", consolidated=False)
+        zarr.consolidate_metadata(self._store)
+        self._buffers[group] = [ds]
+        self._appends_since_rechunk[group] = 0
