@@ -13,11 +13,11 @@ from pathlib import Path
 from typing import Any
 
 import xarray as xr
+from libmuscle import Message
 
 from muscle3_dashboard.recorder.base import (
     DeserializeFn,
     ExtractFn,
-    MessageLike,
     Recorder,
     RecorderFactory,
     RecorderState,
@@ -184,7 +184,7 @@ class RecorderCollection:
             for port, deserialize in deserializers.items()
         }
 
-    def handle(self, port: str, msg: MessageLike) -> str:
+    def handle(self, port: str, msg: Message) -> str:
         """Write ``msg`` via ``port``'s recorder; returns a short detail to
         log."""
         return self._recorders[port].handle(msg)

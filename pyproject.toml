@@ -16,25 +16,22 @@ license = {file = "LICENSE.txt"}
 dependencies = [
     "click",
     "panel",
-    # Renders the simulation graph card.
+    # Simulation graph card; ymmsl is also imported directly (ymmsl.v0_2).
     "ymmsl2svg>=0.1",
+    "ymmsl>=0.18",
     # Shared State/Plotter + Zarr recorder base for live/replay tabs.
     "numpy",
     "xarray",
     "zarr",
     "holoviews",
     "param",
-    # Imported directly (ymmsl.v0_2); ymmsl2svg v0.1 requires 0.18.
-    "ymmsl>=0.18",
+    # Recorder base/collection use libmuscle.Message.
+    "muscle3>=0.11",
 ]
 dynamic = ["version"]
 requires-python = ">=3.11"
 
 [project.optional-dependencies]
-# Kept as empty aliases so existing `pip install muscle3-dashboard[graph]`
-# / `[recording]` commands keep working; both are now regular dependencies.
-graph = []
-recording = []
 dev = [
     "ruff",
     "pytest",
