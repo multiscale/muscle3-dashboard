@@ -4,6 +4,11 @@ muscle_dashboard is a Panel based dashboard for log parsing and debugging of MUS
 # Installation
 Quick developer installation guide
 
+Requires **Python 3.11 or newer** (3.12+ recommended: current releases of
+panel, bokeh, numpy and zarr need it). Check with `python3 --version` before
+creating the venv, since the venv uses whichever Python creates it; if your
+default `python3` is older, create it with e.g. `python3.12 -m venv ./venv`.
+
 ```bash
 git clone git@github.com:multiscale/muscle3-dashboard.git
 cd muscle3-dashboard
