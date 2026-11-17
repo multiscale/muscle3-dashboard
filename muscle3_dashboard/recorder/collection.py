@@ -5,6 +5,7 @@ routes each message to its port's :class:`~.base.Recorder`, which writes it
 to disk.
 """
 
+import functools
 import logging
 import runpy
 import shutil
@@ -171,9 +172,14 @@ class RecorderCollection:
         make_recorder: RecorderFactory,
         fields: Collection[str] | None = None,
         automatic_extract: bool = False,
+        record_interval: float = 0.0,
     ) -> None:
         self.extract = load_extract_config(str(config), fields, automatic_extract)
         self.config_snapshot = snapshot_config(config, store_path)
+        if record_interval > 0:
+            make_recorder = functools.partial(
+                make_recorder, record_interval=record_interval
+            )
         self._recorders: dict[str, Recorder] = {
             port: make_recorder(
                 store_path / port,

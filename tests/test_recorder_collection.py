@@ -212,3 +212,28 @@ def test_collection_fields_restrict_what_gets_recorded(tmp_path):
 
     assert len(log) == 1
     assert set(log[0]) == {"a"}
+
+
+def test_collection_passes_record_interval(tmp_path):
+    config = tmp_path / "config.py"
+    config.write_text(_TWO_FIELD_CONFIG)
+    store_path = tmp_path / "store"
+    store_path.mkdir()
+    log = []
+
+    def make_recorder(store_dir, deserialize, extract, profile, record_interval):
+        recorder = _RecordingRecorder(store_dir, deserialize, extract, profile, log)
+        recorder._record_interval = record_interval
+        return recorder
+
+    collection = RecorderCollection(
+        store_path,
+        config,
+        {"equilibrium_in": lambda data: data},
+        make_recorder,
+        record_interval=1.0,
+    )
+    for t, next_t in [(0.0, 0.5), (0.5, 1.0), (1.0, 1.5), (1.5, None)]:
+        collection.handle("equilibrium_in", Message(t, next_t, data={"t": t}))
+
+    assert len(log) == 3  # t=0.0, 1.0 and the stream's last message 1.5

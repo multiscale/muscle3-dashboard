@@ -58,9 +58,10 @@ def _make_collection(
     """Read the recorder settings and build its collection over ``ports``."""
     config = Path(str(instance.get_setting("config", "str")))
     automatic_extract = instance.get_setting("automatic_extract", "bool", default=False)
-    fields = str(instance.get_setting("automatic_extract_fields", "str", default=""))
-    store_path_setting = str(instance.get_setting("store_path", "str", default=""))
+    fields = instance.get_setting("automatic_extract_fields", "str", default="")
+    store_path_setting = instance.get_setting("store_path", "str", default="")
     store_path = Path(store_path_setting) if store_path_setting else Path.cwd()
+    record_interval = get_setting_optional(instance, "record_interval", default=0.0)
 
     if not resuming:
         for port in ports:
@@ -75,6 +76,7 @@ def _make_collection(
         make_recorder,
         fields=fields.split() or None,
         automatic_extract=automatic_extract,
+        record_interval=record_interval,
     )
 
 

@@ -35,6 +35,7 @@ class RecorderState(TypedDict):
     last_time: float | None
     prev_ended: bool
     is_open: bool
+    last_recorded: float | None
 
 
 class Recorder(ABC):
@@ -46,20 +47,25 @@ class Recorder(ABC):
         deserialize: DeserializeFn,
         extract: ExtractFn,
         profile: str,
+        record_interval: float = 0.0,
     ) -> None:
         self._store_dir = store_dir
         self._deserialize = deserialize
         self._extract = extract
         self._profile = profile
+        self._record_interval = record_interval
         self._state: RecorderState = {
             "occurrence": 0,
             "last_time": None,
             "prev_ended": False,
             "is_open": False,
+            "last_recorded": None,
         }
 
     def handle(self, msg: Message) -> str:
-        """Extract and write one message. Returns a short detail to log."""
+        """Extract and write one message, unless it falls within
+        ``record_interval`` of the last recorded one. Returns a short detail
+        to log."""
         state = self._state
         restarted = state["prev_ended"] or (
             state["last_time"] is not None and msg.timestamp < state["last_time"]
@@ -71,13 +77,25 @@ class Recorder(ABC):
         if not state["is_open"]:
             self._open_occurrence(self._store_dir / f"{state['occurrence']:04d}")
             state["is_open"] = True
+            state["last_recorded"] = None
 
-        message = self._deserialize(msg.data)
-        datasets = self._extract(message)
-        detail = self._write(datasets)
+        detail = "skipped (record_interval)"
+        if self._is_due(msg):
+            message = self._deserialize(msg.data)
+            detail = self._write(self._extract(message))
+            state["last_recorded"] = msg.timestamp
         state["last_time"] = msg.timestamp
         state["prev_ended"] = msg.next_timestamp is None
         return detail
+
+    def _is_due(self, msg: Message) -> bool:
+        """Always record an occurrence's first and last message; in between,
+        only once ``record_interval`` has passed since the last recorded."""
+        last = self._state["last_recorded"]
+        if last is None or msg.next_timestamp is None:
+            return True
+        # Relative tolerance so accumulated float steps still hit the interval.
+        return msg.timestamp - last >= self._record_interval * (1 - 1e-9)
 
     def close(self) -> None:
         """Finalize the currently open occurrence, if any (an empty
@@ -96,7 +114,8 @@ class Recorder(ABC):
         """Resume from a previous :meth:`get_state`: restores bookkeeping
         and, if an occurrence was still open at checkpoint time, reopens
         it."""
-        self._state = state.copy()
+        # Snapshots from before record_interval existed lack last_recorded.
+        self._state = {"last_recorded": None, **state}
         if self._state["is_open"]:
             self._reopen_occurrence(
                 self._store_dir / f"{self._state['occurrence']:04d}"

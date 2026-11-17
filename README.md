@@ -84,9 +84,11 @@ messages; record senders running at different rates with one recorder each.
 `run_recorder_actor` writes one live-tailable Zarr store per port per
 outer-loop iteration, snapshots `config` next to the data for provenance,
 and supports checkpoint/resume. Its settings are `config`, `store_path`,
-`automatic_extract` and `automatic_extract_fields`. See
-`imas_muscle3.actors.recorder_component` for a complete reference
-implementation.
+`automatic_extract`, `automatic_extract_fields` and `record_interval` (only
+record a message once that much simulation time has passed since the last
+recorded one; the first and last message of each occurrence are always
+kept). See `imas_muscle3.actors.recorder_component` for a complete
+reference implementation.
 
 # Legal
 
