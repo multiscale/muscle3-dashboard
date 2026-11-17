@@ -10,11 +10,35 @@ on-disk format itself is left to a subclass, e.g.
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any, Protocol, TypedDict
 
 import xarray as xr
-from libmuscle import Message
+
+
+class MessageLike(Protocol):
+    """What a :class:`Recorder` needs from a message. A
+    ``libmuscle.Message`` fits as-is, but none is required: see
+    :class:`Record`."""
+
+    timestamp: float
+    next_timestamp: float | None
+    data: Any
+
+
+@dataclass
+class Record:
+    """A plain :class:`MessageLike`, for recording without MUSCLE3.
+
+    ``next_timestamp=None`` marks the last message of a stream; the next
+    message then starts a new occurrence.
+    """
+
+    timestamp: float
+    next_timestamp: float | None = None
+    data: Any = None
+
 
 #: Turns a message's raw bytes payload into whatever `ExtractFn` expects
 #: (e.g. a domain-specific message object, deserialized against the port's
@@ -58,7 +82,7 @@ class Recorder(ABC):
             "is_open": False,
         }
 
-    def handle(self, msg: Message) -> str:
+    def handle(self, msg: MessageLike) -> str:
         """Extract and write one message. Returns a short detail to log."""
         state = self._state
         restarted = state["prev_ended"] or (

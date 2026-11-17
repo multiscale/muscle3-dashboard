@@ -5,8 +5,12 @@ from collections.abc import Callable
 
 import panel as pn
 import param
+from ymmsl import load_as
+from ymmsl.v0_2 import Configuration, check_timelines
+from ymmsl2svg.main import configuration2svg
+from ymmsl2svg.settings import settings as ymmsl2svg_settings
 
-from muscle3_dashboard.constants import CARD_MARGIN, SHOW_PORT_ICONS
+from muscle3_dashboard.constants import CARD_MARGIN
 from muscle3_dashboard.data_manager import DataManager
 from muscle3_dashboard.instances import base_name
 from muscle3_dashboard.loganalyzer.manager import ComponentStatus
@@ -96,16 +100,6 @@ def _legend_html() -> str:
     )
 
 
-try:
-    from ymmsl import load_as
-    from ymmsl.v0_2 import Configuration, TimelineTree
-    from ymmsl2svg.main import configuration2svg
-    from ymmsl2svg.settings import settings as ymmsl2svg_settings
-except ImportError:  # ymmsl2svg not installed
-    configuration2svg = None
-    ymmsl2svg_settings = None
-
-
 class _ClickableSVG(pn.reactive.ReactiveHTML):
     """Render an SVG string and report the clicked component.
 
@@ -169,14 +163,12 @@ class _ClickableSVG(pn.reactive.ReactiveHTML):
 class YmmslGraphViewer(pn.viewable.Viewer):
     """Render the run's coupling diagram from its ``configuration.ymmsl``.
 
-    Visualization needs the ``ymmsl2svg`` dependency (installed with
-    muscle3-dashboard); without it, a missing config,
-    or an unvisualizable model, a short message and a component dropdown are
-    shown instead. Component boxes are coloured by status (crashed also
-    outlined); clicking a component (or picking it from the dropdown) invokes
-    ``on_select`` with its name to show that component's logs. ymmsl2svg is
-    called at most once per run -- the diagram is static, so later ticks only
-    re-colour the cached SVG rather than re-rendering it.
+    With a missing config or an unvisualizable model, a short message and a
+    component dropdown are shown instead. Component boxes are coloured by
+    status (crashed also outlined); clicking a component (or picking it from
+    the dropdown) invokes ``on_select`` with its name to show that component's
+    logs. ymmsl2svg is called at most once per run -- the diagram is static, so
+    later ticks only re-colour the cached SVG rather than re-rendering it.
     """
 
     def __init__(
@@ -241,16 +233,6 @@ class YmmslGraphViewer(pn.viewable.Viewer):
 
     def render(self) -> None:
         """Render configuration.ymmsl into the graph, with fallbacks."""
-        if configuration2svg is None:
-            # A missing dependency won't change while we run: settle for good.
-            self._svg_done = True
-            self._show_message(
-                "Install the `ymmsl2svg` dependency to see the simulation "
-                "graph: `pip install "
-                "git+https://github.com/multiscale/ymmsl2svg.git@v0.1`."
-            )
-            return
-
         config = self.data_manager.run_folder / "configuration.ymmsl"
         if not config.is_file():
             # The config may yet be written; keep polling (cheaply) for it.
@@ -275,10 +257,6 @@ class YmmslGraphViewer(pn.viewable.Viewer):
             return
 
         ymmsl2svg_settings.debug = False
-        ymmsl2svg_settings.check_timelines = False
-        # hasattr-guarded so an older ymmsl2svg without the option still renders.
-        if not SHOW_PORT_ICONS and hasattr(ymmsl2svg_settings, "disable_port_icons"):
-            ymmsl2svg_settings.disable_port_icons()
         try:
             svg = configuration2svg(cfg)
         except Exception as draw_error:
@@ -290,7 +268,7 @@ class YmmslGraphViewer(pn.viewable.Viewer):
         # still draw fine, but the layout is approximate — flag it.
         note_html = ""
         try:
-            TimelineTree(cfg.root_model()).check_consistent()
+            check_timelines(cfg.root_model())
         except Exception as timeline_error:
             note_html = self._approximate_note(timeline_error)
 

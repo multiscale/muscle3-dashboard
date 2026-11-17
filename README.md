@@ -20,8 +20,7 @@ pytest
 
 The per-run **simulation graph** is drawn from the run's `configuration.ymmsl`
 by [`ymmsl2svg`](https://github.com/multiscale/ymmsl2svg), which is installed
-as a regular dependency (if it is missing, the rest of the dashboard still
-works and the graph card is simply hidden).
+as a regular dependency.
 
 # How to use
 ```bash
@@ -29,59 +28,48 @@ works and the graph card is simply hidden).
 muscle_dashboard path/to/my/muscle/simulation/workdir
 ```
 
-# Recording your own actor's data
+# Recording your own data
 
-Any MUSCLE3 actor can gain a live/replay Recorder tab in the dashboard by
-writing its traffic through `muscle3_dashboard.recorder` -- no dashboard-side
-configuration needed, since a recorder is recognised purely by its on-disk
+> **The MUSCLE3 recorder actor is temporarily disabled.** It relied on
+> MUSCLE3 internals that changed in muscle3 0.11; `run_recorder_actor()` now
+> raises a clear error. muscle3-dashboard no longer depends on muscle3.
+
+Recording does not need MUSCLE3: any Python code can write data that the
+dashboard shows in a live/replay Recorder tab -- no dashboard-side
+configuration needed, since a recording is recognised purely by its on-disk
 footprint.
 
-Bring two things: a `deserialize(bytes) -> your_message` function per port,
+Bring two things: a `deserialize(data) -> your_message` function per port,
 and a `config` file defining `extract(message) -> dict[str, xarray.Dataset]`
 (or a `State` class -- see `muscle3_dashboard.visualization.base_state` --
-so the same file can double as a `Plotter` for live viewing). Everything
-else is generic:
+so the same file can double as a `Plotter` for live viewing). Then feed it
+messages: anything with `timestamp`, `next_timestamp` and `data` (a
+`libmuscle.Message` works as-is, or use `Record`):
 
 ```python
-import functools
 from pathlib import Path
 
-from libmuscle import Instance, InstanceFlags
-from ymmsl.v0_2 import Operator
-
+from muscle3_dashboard.recorder.base import Record
 from muscle3_dashboard.recorder.collection import RecorderCollection
 from muscle3_dashboard.recorder.zarr_recorder import ZarrRecorder
 
-
-def deserialize(port: str, data: bytes) -> "MyMessage":
-    ...  # bytes -> your own message type
-
-
-def main() -> None:
-    instance = Instance(flags=InstanceFlags.USES_CHECKPOINT_API)
-    while instance.reuse_instance():
-        ports = [
-            p for p in instance.list_ports().get(Operator.S, [])
-            if instance.is_connected(p)
-        ]
-        collection = RecorderCollection(
-            store_path=Path(instance.get_setting("store_path", "str")),
-            config=Path(instance.get_setting("config", "str")),
-            deserializers={p: functools.partial(deserialize, p) for p in ports},
-            make_recorder=ZarrRecorder,
-        )
-        for port in ports:
-            collection.handle(port, instance.receive(port))
-        collection.close()
+collection = RecorderCollection(
+    Path("store"),
+    Path("my_config.py"),
+    {"state": deserialize},
+    ZarrRecorder,
+)
+for i, payload in enumerate(payloads):
+    last = i == len(payloads) - 1
+    collection.handle("state", Record(float(i), None if last else i + 1.0, payload))
+collection.close()
 ```
 
 `RecorderCollection` writes one live-tailable Zarr store per port per
-outer-loop iteration, snapshots `config` next to the data for provenance,
-and supports checkpoint/resume via `collection.get_state()`/
-`restore_state()`. For the full production pattern -- multiple ports
-drained independently, end-of-stream handling, and checkpointing wired up
--- see `imas_muscle3.actors.recorder_component` for a complete reference
-implementation.
+occurrence (a message with `next_timestamp=None` ends a stream; the next one
+starts a new occurrence), snapshots `config` next to the data for
+provenance, and supports checkpoint/resume via `collection.get_state()`/
+`restore_state()`.
 
 # Legal
 

@@ -1,6 +1,4 @@
-from libmuscle import Message
-
-from muscle3_dashboard.recorder.base import Recorder
+from muscle3_dashboard.recorder.base import Record, Recorder
 
 # --- occurrence splitting (format-agnostic) --------------------------------
 
@@ -33,10 +31,10 @@ def test_recorder_splits_occurrences_on_restart(tmp_path):
     opened = []
     rec = _recorder(tmp_path, opened)
     # iteration 0: t=0,1 (1 ends the stream); iteration 1: t=0,1 (time resets).
-    rec.handle(Message(0.0, 1.0, data=None))
-    rec.handle(Message(1.0, None, data=None))
-    rec.handle(Message(0.0, 1.0, data=None))
-    rec.handle(Message(1.0, None, data=None))
+    rec.handle(Record(0.0, 1.0, data=None))
+    rec.handle(Record(1.0, None, data=None))
+    rec.handle(Record(0.0, 1.0, data=None))
+    rec.handle(Record(1.0, None, data=None))
     rec.close()
     assert opened == ["0000", "0001"]
 
@@ -45,9 +43,9 @@ def test_recorder_one_occurrence_for_monotonic(tmp_path):
     """A single monotonic trace stays one occurrence (no spurious split)."""
     opened = []
     rec = _recorder(tmp_path, opened)
-    rec.handle(Message(0.0, 1.0, data=None))
-    rec.handle(Message(1.0, 2.0, data=None))
-    rec.handle(Message(2.0, None, data=None))
+    rec.handle(Record(0.0, 1.0, data=None))
+    rec.handle(Record(1.0, 2.0, data=None))
+    rec.handle(Record(2.0, None, data=None))
     rec.close()
     assert opened == ["0000"]
 
@@ -60,9 +58,9 @@ def test_recorder_state_roundtrip_resumes_same_occurrence(tmp_path):
     same occurrence, rather than starting over at 0000."""
     opened = []
     rec = _recorder(tmp_path, opened)
-    rec.handle(Message(0.0, 1.0, data=None))
-    rec.handle(Message(1.0, None, data=None))  # ends occurrence 0000
-    rec.handle(Message(0.0, 1.0, data=None))  # starts occurrence 0001
+    rec.handle(Record(0.0, 1.0, data=None))
+    rec.handle(Record(1.0, None, data=None))  # ends occurrence 0000
+    rec.handle(Record(0.0, 1.0, data=None))  # starts occurrence 0001
 
     state = rec.get_state()
     assert state == {
@@ -78,6 +76,6 @@ def test_recorder_state_roundtrip_resumes_same_occurrence(tmp_path):
     resumed.restore_state(state)
     assert resumed_opened == ["0001"]  # reopened the still-open occurrence
 
-    resumed.handle(Message(1.0, None, data=None))  # continues, doesn't split
+    resumed.handle(Record(1.0, None, data=None))  # continues, doesn't split
     resumed.close()
     assert resumed_opened == ["0001"]

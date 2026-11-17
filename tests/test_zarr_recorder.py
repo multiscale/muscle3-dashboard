@@ -1,7 +1,7 @@
 import numpy as np
 import xarray as xr
-from libmuscle import Message
 
+from muscle3_dashboard.recorder.base import Record
 from muscle3_dashboard.recorder.zarr_recorder import (
     ZarrRecorder,
     group_name,
@@ -159,7 +159,7 @@ def test_zarr_recorder_writes_and_stamps(tmp_path):
         return {"equilibrium": xr.Dataset({"t": ("time", [t])}, coords={"time": [t]})}
 
     rec = ZarrRecorder(tmp_path, lambda data: data, extract, profile="cfg.py")
-    rec.handle(Message(0.0, None, data={"time": 0.0}))
+    rec.handle(Record(0.0, None, data={"time": 0.0}))
     rec.close()
 
     store = tmp_path / "0000.zarr"

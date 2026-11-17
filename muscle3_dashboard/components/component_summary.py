@@ -4,6 +4,8 @@ import re
 from pathlib import Path
 
 import panel as pn
+import ymmsl
+from ymmsl.v0_2 import Configuration
 
 from muscle3_dashboard.constants import CARD_MARGIN
 from muscle3_dashboard.data_manager import DataManager
@@ -11,12 +13,6 @@ from muscle3_dashboard.pathlink import copy_link
 from muscle3_dashboard.reactive import ClickableHTML, CopyButton, encode_markup
 
 logger = logging.getLogger(__name__)
-
-try:
-    import ymmsl
-    from ymmsl.v0_2 import Configuration
-except ImportError:  # ymmsl2svg not installed
-    ymmsl = None
 
 #: Largest file we'll load into the read-only viewer.
 _MAX_FILE_BYTES = 512 * 1024
@@ -84,7 +80,7 @@ class ComponentSummaryViewer(pn.viewable.Viewer):
         if not self._loaded:
             self._loaded = True
             config = self.data_manager.run_folder / "configuration.ymmsl"
-            if ymmsl is not None and config.is_file():
+            if config.is_file():
                 try:
                     self._config = ymmsl.load_as(Configuration, config)
                 except Exception as e:

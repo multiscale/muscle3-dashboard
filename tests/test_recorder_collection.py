@@ -1,6 +1,4 @@
-from libmuscle import Message
-
-from muscle3_dashboard.recorder.base import Recorder
+from muscle3_dashboard.recorder.base import Record, Recorder
 from muscle3_dashboard.recorder.collection import (
     RecorderCollection,
     load_extract_config,
@@ -208,7 +206,7 @@ def test_collection_fields_restrict_what_gets_recorded(tmp_path):
         make_recorder,
         fields=["a"],
     )
-    collection.handle("equilibrium_in", Message(0.0, None, data={"t": 0.0}))
+    collection.handle("equilibrium_in", Record(0.0, None, data={"t": 0.0}))
 
     assert len(log) == 1
     assert set(log[0]) == {"a"}
