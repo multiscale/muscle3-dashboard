@@ -46,14 +46,7 @@ so the same file can double as a `Plotter` for live viewing). Everything
 else is generic:
 
 ```python
-import functools
-from pathlib import Path
-
-from libmuscle import Instance, InstanceFlags
-from ymmsl.v0_2 import Operator
-
-from muscle3_dashboard.recorder.collection import RecorderCollection
-from muscle3_dashboard.recorder.zarr_recorder import ZarrRecorder
+from muscle3_dashboard.recorder.actor import run_recorder_actor
 
 
 def deserialize(port: str, data: bytes) -> "MyMessage":
@@ -61,29 +54,36 @@ def deserialize(port: str, data: bytes) -> "MyMessage":
 
 
 def main() -> None:
-    instance = Instance(flags=InstanceFlags.USES_CHECKPOINT_API)
-    while instance.reuse_instance():
-        ports = [
-            p for p in instance.list_ports().get(Operator.S, [])
-            if instance.is_connected(p)
-        ]
-        collection = RecorderCollection(
-            store_path=Path(instance.get_setting("store_path", "str")),
-            config=Path(instance.get_setting("config", "str")),
-            deserializers={p: functools.partial(deserialize, p) for p in ports},
-            make_recorder=ZarrRecorder,
-        )
-        for port in ports:
-            collection.handle(port, instance.receive(port))
-        collection.close()
+    run_recorder_actor(
+        deserializer_for_port=lambda port: lambda data: deserialize(port, data)
+    )
 ```
 
-`RecorderCollection` writes one live-tailable Zarr store per port per
+Wire the recorder's `f_init` ports as extra receivers on the conduits you
+want to record:
+
+```yaml
+components:
+  rec:
+    implementation: my_recorder
+    ports:
+      f_init: [state_in]
+conduits:
+  model.state_out: [consumer.state_in, rec.state_in]
+settings:
+  rec.config: /path/to/config.py
+```
+
+Each `reuse_instance()` iteration delivers one message per port, and the
+recorder stops by itself once the senders close their ports. All ports of
+one recorder advance together, so they must receive the same number of
+messages; record senders running at different rates with one recorder each.
+
+`run_recorder_actor` writes one live-tailable Zarr store per port per
 outer-loop iteration, snapshots `config` next to the data for provenance,
-and supports checkpoint/resume via `collection.get_state()`/
-`restore_state()`. For the full production pattern -- multiple ports
-drained independently, end-of-stream handling, and checkpointing wired up
--- see `imas_muscle3.actors.recorder_component` for a complete reference
+and supports checkpoint/resume. Its settings are `config`, `store_path`,
+`automatic_extract` and `automatic_extract_fields`. See
+`imas_muscle3.actors.recorder_component` for a complete reference
 implementation.
 
 # Legal

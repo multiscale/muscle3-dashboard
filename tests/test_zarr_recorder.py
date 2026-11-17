@@ -141,6 +141,26 @@ def test_reopen_occurrence_rehydrates_buffer_for_later_rebuild(tmp_path):
     assert np.isnan(second[5:]).all()
 
 
+def test_reopen_occurrence_drops_data_after_checkpoint(tmp_path):
+    """Messages written after the checkpoint get re-sent on resume, so they
+    must not stay on disk twice."""
+    rec1 = _open(tmp_path, "0000")
+    for t in (0.0, 1.0, 2.0):
+        rec1._append("x/y", _single_1d(t, np.ones(8)))
+
+    rec2 = ZarrRecorder(tmp_path, lambda data: data, lambda message: {}, "cfg.py")
+    rec2.restore_state(
+        {"occurrence": 0, "last_time": 1.0, "prev_ended": False, "is_open": True}
+    )
+    rec2._append("x/y", _single_1d(2.0, np.ones(8)))
+    rec2._close_occurrence()
+
+    ds = xr.open_zarr(
+        tmp_path / "0000.zarr", group=group_name("x/y"), consolidated=False
+    )
+    assert list(ds.time.values) == [0.0, 1.0, 2.0]
+
+
 def test_reopen_occurrence_on_missing_store_starts_empty(tmp_path):
     """An occurrence that was opened but never written to (empty timeline)
     has no store on disk yet; resuming it must not fail."""

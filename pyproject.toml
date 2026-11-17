@@ -33,7 +33,7 @@ recording = [
     "holoviews",
     "param",
     # Recorder.handle()/run_recorder_actor() need a real muscle3 actor runtime.
-    "muscle3>=0.10",
+    "muscle3>=0.10,<0.11",
 ]
 dev = [
     "ruff",

@@ -113,20 +113,42 @@ class ZarrRecorder(Recorder):
         Reopens the store, then reloads each group's data from disk into
         its rebuild buffer, instead of saving that buffer in the checkpoint
         itself. That way, a later schema mismatch can still rebuild from
-        the group's full history, not just what arrived since the resume."""
+        the group's full history, not just what arrived since the resume.
+
+        Data written after the checkpoint is dropped: the senders resume
+        from the same checkpoint and send it again."""
         self._open_occurrence(base)
         store = Path(self._store)
         if not store.exists():
             return
         root = zarr.open_group(str(store), mode="r")
-        for name in root.group_keys():
+        for name in list(root.group_keys()):
             try:
                 ds = xr.open_zarr(self._store, group=name, consolidated=False).load()
             except Exception:
                 logger.exception("could not rehydrate group '%s' from %s", name, store)
                 continue
+            ds = self._truncate_to_checkpoint(name, ds)
+            if ds is None:
+                continue
             self._buffers[name] = [ds]
             self._sig[name] = _signature(ds)
+
+    def _truncate_to_checkpoint(self, name: str, ds: xr.Dataset) -> xr.Dataset | None:
+        """Drop ``ds``'s entries after the checkpoint's ``last_time`` and
+        rewrite the group on disk if any were dropped; None if none remain."""
+        last_time = self._state["last_time"]
+        keep = (ds[_TIME] <= last_time).values if last_time is not None else None
+        if keep is None or keep.all():
+            return ds
+        shutil.rmtree(Path(self._store) / name, ignore_errors=True)
+        if not keep.any():
+            return None
+        ds = ds.isel({_TIME: keep})
+        for var in ds.variables.values():
+            var.encoding.pop("chunks", None)
+        ds.to_zarr(self._store, group=name, mode="w", consolidated=False)
+        return ds
 
     def _write(self, datasets: dict[str, xr.Dataset]) -> str:
         for name, ds in datasets.items():
