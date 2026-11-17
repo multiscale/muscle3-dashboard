@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 try:
     import ymmsl
     from ymmsl.v0_2 import Configuration
-except ImportError:  # optional "graph" extra not installed
+except ImportError:  # ymmsl2svg not installed
     ymmsl = None
 
 

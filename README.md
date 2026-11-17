@@ -14,13 +14,9 @@ pytest
 ```
 
 The per-run **simulation graph** is drawn from the run's `configuration.ymmsl`
-by [`ymmsl2svg`](https://github.com/multiscale/ymmsl2svg), an optional
-dependency. Install it with the `graph` extra (without it the rest of the
-dashboard works and the graph card is simply hidden):
-
-```bash
-pip install -e .[dev,graph]
-```
+by [`ymmsl2svg`](https://github.com/multiscale/ymmsl2svg), which is installed
+as a regular dependency (if it is missing, the rest of the dashboard still
+works and the graph card is simply hidden).
 
 # How to use
 ```bash
@@ -34,10 +30,6 @@ Any MUSCLE3 actor can gain a live/replay Recorder tab in the dashboard by
 writing its traffic through `muscle3_dashboard.recorder` -- no dashboard-side
 configuration needed, since a recorder is recognised purely by its on-disk
 footprint.
-
-```bash
-pip install muscle3-dashboard[recording]
-```
 
 Bring two things: a `deserialize(bytes) -> your_message` function per port,
 and a `config` file defining `extract(message) -> dict[str, xarray.Dataset]`
@@ -162,10 +154,10 @@ Clicking a run opens its dashboard, a single page top to bottom:
 * a **crash banner** (only on failure) naming the likely-responsible
   component(s) and any collateral crashes;
 * a **simulation graph** of the coupling (from `configuration.ymmsl` via
-  the optional `graph` extra), with a colour legend and components coloured
+  `ymmsl2svg`), with a colour legend and components coloured
   by status (running / finished / crashed) and the likely-responsible
   component on a crash outlined and its log opened automatically; click any
-  component to inspect it (without the `graph` extra a dropdown lists the
+  component to inspect it (without `ymmsl2svg` installed a dropdown lists the
   components instead);
 * a **component summary** for the clicked component — a port block plus
   its program, settings and description, with referenced text files as

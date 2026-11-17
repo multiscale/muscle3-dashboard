@@ -101,7 +101,7 @@ try:
     from ymmsl.v0_2 import Configuration, TimelineTree
     from ymmsl2svg.main import configuration2svg
     from ymmsl2svg.settings import settings as ymmsl2svg_settings
-except ImportError:  # optional "graph" extra not installed
+except ImportError:  # ymmsl2svg not installed
     configuration2svg = None
     ymmsl2svg_settings = None
 
@@ -169,8 +169,8 @@ class _ClickableSVG(pn.reactive.ReactiveHTML):
 class YmmslGraphViewer(pn.viewable.Viewer):
     """Render the run's coupling diagram from its ``configuration.ymmsl``.
 
-    Visualization needs the optional ``ymmsl2svg`` dependency
-    (``pip install muscle3-dashboard[graph]``); without it, a missing config,
+    Visualization needs the ``ymmsl2svg`` dependency (installed with
+    muscle3-dashboard); without it, a missing config,
     or an unvisualizable model, a short message and a component dropdown are
     shown instead. Component boxes are coloured by status (crashed also
     outlined); clicking a component (or picking it from the dropdown) invokes
@@ -245,8 +245,9 @@ class YmmslGraphViewer(pn.viewable.Viewer):
             # A missing dependency won't change while we run: settle for good.
             self._svg_done = True
             self._show_message(
-                "Install the optional `ymmsl2svg` dependency to see the "
-                "simulation graph: `pip install muscle3-dashboard[graph]`."
+                "Install the `ymmsl2svg` dependency to see the simulation "
+                "graph: `pip install "
+                "git+https://github.com/multiscale/ymmsl2svg.git@v0.1`."
             )
             return
 

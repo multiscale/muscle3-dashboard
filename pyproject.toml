@@ -16,16 +16,8 @@ license = {file = "LICENSE.txt"}
 dependencies = [
     "click",
     "panel",
-]
-dynamic = ["version"]
-requires-python = ">=3.11"
-
-[project.optional-dependencies]
-graph = [
     # Renders the simulation graph card; not on PyPI yet, pulled from git.
-    "ymmsl2svg @ git+https://github.com/DaanVanVugt/ymmsl2svg.git@feat/conduit-hover-labels",
-]
-recording = [
+    "ymmsl2svg @ git+https://github.com/multiscale/ymmsl2svg.git@v0.1",
     # Shared State/Plotter + Zarr recorder base for live/replay tabs.
     "numpy",
     "xarray",
@@ -35,6 +27,14 @@ recording = [
     # Recorder.handle()/run_recorder_actor() need a real muscle3 actor runtime.
     "muscle3>=0.10",
 ]
+dynamic = ["version"]
+requires-python = ">=3.11"
+
+[project.optional-dependencies]
+# Kept as empty aliases so existing `pip install muscle3-dashboard[graph]`
+# / `[recording]` commands keep working; both are now regular dependencies.
+graph = []
+recording = []
 dev = [
     "ruff",
     "pytest",
