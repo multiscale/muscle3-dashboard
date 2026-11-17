@@ -18,6 +18,9 @@ from muscle3_dashboard.reactive import encode_markup
 
 logger = logging.getLogger(__name__)
 
+# Draw without ymmsl2svg's debug overlays.
+ymmsl2svg_settings.debug = False
+
 #: MUSCLE3 docs section ("Designing the connections") with the gMMSL diagram
 #: explaining how conduits connect the port operators (F_INIT / O_I / S / O_F)
 #: across time scales — the annotations whose mismatch makes ymmsl2svg's strict
@@ -179,10 +182,10 @@ class YmmslGraphViewer(pn.viewable.Viewer):
         super().__init__()
         self.data_manager = data_manager
         self.on_select = on_select
-        self._base_svg: str | None = None  # rendered graph, before styling
-        self._rendered = False
-        # ymmsl2svg has been called for good (drawn, or definitively failed) and
-        # must not be retried each tick; the config is static once present.
+        # Rendered graph before styling; None while there is no graph.
+        self._base_svg: str | None = None
+        # The config was found and drawn (or failed to draw) once; it is static
+        # once present, so don't retry each tick.
         self._svg_done = False
         self._styled: dict[str, tuple[str, float]] = {}  # name -> (status, opacity)
         # base name -> monotonic time its log was last seen to change, and
@@ -256,7 +259,6 @@ class YmmslGraphViewer(pn.viewable.Viewer):
             self._show_message(f"Could not load `{config.name}`: {load_error}")
             return
 
-        ymmsl2svg_settings.debug = False
         try:
             svg = configuration2svg(cfg)
         except Exception as draw_error:
@@ -273,7 +275,6 @@ class YmmslGraphViewer(pn.viewable.Viewer):
             note_html = self._approximate_note(timeline_error)
 
         self._base_svg = str(svg)
-        self._rendered = True
         self.graph.visible = True
         self.legend.visible = True
         self.fallback_select.visible = False
@@ -445,15 +446,15 @@ class YmmslGraphViewer(pn.viewable.Viewer):
         if not self._svg_done:
             self.render()  # draws the graph or shows the message + dropdown
             return
-        if self._rendered:
+        if self._base_svg is not None:
             # The diagram is static; only statuses / recent activity evolve, so
             # re-colour the cached SVG when the sampled styling changes.
             styles = self._component_styles()
             if styles != self._styled:
                 self._apply_styling(styles)
         else:
-            # No graph and we won't retry ymmsl2svg; keep the dropdown current
-            # as components appear in the log.
+            # The config could not be drawn; keep the dropdown current as
+            # components appear in the log.
             self._populate_fallback()
 
     def __panel__(self):

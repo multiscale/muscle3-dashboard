@@ -19,8 +19,7 @@ pytest
 ```
 
 The per-run **simulation graph** is drawn from the run's `configuration.ymmsl`
-by [`ymmsl2svg`](https://github.com/multiscale/ymmsl2svg), which is installed
-as a regular dependency.
+by [`ymmsl2svg`](https://github.com/multiscale/ymmsl2svg).
 
 # How to use
 ```bash
@@ -150,8 +149,7 @@ Clicking a run opens its dashboard, a single page top to bottom:
   `ymmsl2svg`), with a colour legend and components coloured
   by status (running / finished / crashed) and the likely-responsible
   component on a crash outlined and its log opened automatically; click any
-  component to inspect it (without `ymmsl2svg` installed a dropdown lists the
-  components instead);
+  component to inspect it;
 * a **component summary** for the clicked component — a port block plus
   its program, settings and description, with referenced text files as
   inline links that open in a read-only viewer (with copy-path and
