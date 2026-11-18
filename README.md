@@ -50,13 +50,15 @@ from muscle3_dashboard.recorder.actor import run_recorder_actor
 
 
 def deserialize(port: str, data: bytes) -> "MyMessage":
+    # might have different deserialization behavior for different ports
     ...  # bytes -> your own message type
 
 
 def main() -> None:
-    run_recorder_actor(
-        deserializer_for_port=lambda port: lambda data: deserialize(port, data)
-    )
+    run_recorder_actor(deserializer_for_port=deserialize)
+
+if __name__ == '__main__':
+  main()
 ```
 
 Wire the recorder's `f_init` ports as extra receivers on the conduits you
@@ -67,7 +69,7 @@ components:
   rec:
     implementation: my_recorder
     ports:
-      f_init: [state_in]
+      f_init: state_in
 conduits:
   model.state_out: [consumer.state_in, rec.state_in]
 settings:

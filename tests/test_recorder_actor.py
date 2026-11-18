@@ -34,6 +34,12 @@ class _FakeCollection:
         self.closed = True
 
 
+@pytest.fixture(autouse=True)
+def _in_tmp_path(monkeypatch, tmp_path):
+    """The default store_path is the cwd; keep test output out of the repo."""
+    monkeypatch.chdir(tmp_path)
+
+
 def _instance(iterations, ports=None, settings=None, resuming=False):
     """A Mock Instance running one reuse iteration per entry of
     ``iterations`` (each a ``{port: timestamp}`` dict), connected on
@@ -156,8 +162,6 @@ def test_builds_real_collection_from_settings(monkeypatch, tmp_path):
     config = tmp_path / "cfg.py"
     config.write_text("def extract(payload):\n    return {}\n")
     store_path = tmp_path / "store"
-    stale = store_path / "a" / "0000.zarr"
-    stale.mkdir(parents=True)
     instance = _instance(
         [{"a": 0.0}],
         settings={"config": str(config), "store_path": str(store_path)},
@@ -166,4 +170,21 @@ def test_builds_real_collection_from_settings(monkeypatch, tmp_path):
     _run(monkeypatch, instance)
 
     assert (store_path / config.name).is_file()  # config snapshot was made
-    assert not stale.exists()  # a fresh run starts clean
+
+
+def test_refuses_non_empty_port_dir(monkeypatch, tmp_path):
+    config = tmp_path / "cfg.py"
+    config.write_text("def extract(payload):\n    return {}\n")
+    keep = tmp_path / "a" / "precious.txt"
+    keep.parent.mkdir()
+    keep.write_text("x")
+    instance = _instance(
+        [{"a": 0.0}],
+        settings={"config": str(config), "store_path": str(tmp_path)},
+    )
+
+    with pytest.raises(RuntimeError, match="is not empty"):
+        _run(monkeypatch, instance)
+
+    assert keep.read_text() == "x"
+    instance.error_shutdown.assert_called_once()

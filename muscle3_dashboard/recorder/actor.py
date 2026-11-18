@@ -1,5 +1,5 @@
-"""A complete MUSCLE3 recorder-actor ``main()``, generic over the message
-format: a domain package supplies only a per-port deserializer (and,
+"""Runs a MUSCLE3 recorder actor from start to finish, generic over the
+message format: a domain package supplies only a per-port deserializer (and,
 optionally, a non-Zarr :class:`~.base.Recorder`) and gets checkpoint/resume
 and settings handling for free.
 
@@ -12,7 +12,6 @@ example.
 """
 
 import logging
-import shutil
 from collections.abc import Callable
 from pathlib import Path
 
@@ -41,6 +40,14 @@ def _check_ports(instance: Instance) -> list[str]:
     return get_port_list(instance, Operator.F_INIT)
 
 
+def _check_port_dir_empty(instance: Instance, port_dir: Path) -> None:
+    """A fresh run never mixes with, or deletes, earlier recordings."""
+    if port_dir.exists() and any(port_dir.iterdir()):
+        msg = f"{port_dir} is not empty: remove it or choose another store_path"
+        instance.error_shutdown(msg)
+        raise RuntimeError(msg)
+
+
 def _make_collection(
     instance: Instance,
     ports: list[str],
@@ -55,12 +62,10 @@ def _make_collection(
     store_path_setting = str(instance.get_setting("store_path", "str", default=""))
     store_path = Path(store_path_setting) if store_path_setting else Path.cwd()
 
-    store_path.mkdir(parents=True, exist_ok=True)
     if not resuming:
-        # A fresh run starts clean; a resumed one keeps what's already on
-        # disk. Never remove store_path itself (may be the run folder).
         for port in ports:
-            shutil.rmtree(store_path / port, ignore_errors=True)
+            _check_port_dir_empty(instance, store_path / port)
+    store_path.mkdir(parents=True, exist_ok=True)
 
     logger.info("recording %d timeline(s) %s to %s", len(ports), ports, store_path)
     return RecorderCollection(
@@ -91,24 +96,19 @@ def run_recorder_actor(
     deserializer_for_port: Callable[[str], DeserializeFn],
     make_recorder: RecorderFactory = ZarrRecorder,
 ) -> None:
-    """A complete MUSCLE3 recorder-actor ``main()``.
+    """Runs a recorder actor from start to finish.
 
-    Reads the recorder actor's settings (``config``, ``store_path``,
-    ``automatic_extract``, ``automatic_extract_fields``),
-    builds a :class:`~.collection.RecorderCollection` over every connected
-    ``F_INIT`` port -- each deserialized via ``deserializer_for_port(port)``
-    -- and records one message per port per ``reuse_instance()`` iteration
-    until the senders close their ports, with checkpoint/resume support.
-
-    All ports advance in lockstep, so they must receive the same number of
-    messages; record senders that run at different rates with one recorder
-    each.
+    Reads its settings (``config``, ``store_path``, ``automatic_extract``,
+    ``automatic_extract_fields``), then records every message on its
+    ``F_INIT`` ports until the senders close them, with checkpoint/resume
+    support. Each port's messages are deserialized via
+    ``deserializer_for_port(port)``.
 
     Args:
         deserializer_for_port: Builds the :data:`~.base.DeserializeFn` for
             one port (called once, with each connected ``F_INIT`` port's
-            name), so it can fail loudly up front on a port name it doesn't
-            recognise, before any data arrives.
+            name), so it can raise an exception up front on a port name it
+            doesn't recognise, before any data arrives.
         make_recorder: The :data:`~.base.RecorderFactory` to write each
             port's timeline with. Defaults to
             :class:`~.zarr_recorder.ZarrRecorder`.
