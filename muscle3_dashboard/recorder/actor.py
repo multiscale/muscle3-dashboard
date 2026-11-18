@@ -6,12 +6,6 @@ and settings handling for free.
 The recorder listens on ``F_INIT`` ports: every ``reuse_instance()``
 iteration delivers one message per port, and the loop ends by itself once
 the senders close their ports, using only libmuscle's public API.
-
-The previous implementation depended on libmuscle internals (the private
-``Instance._communicator`` and its end-of-stream signalling), which broke
-with muscle3 0.11 and would break again on any future internal change. It
-is switched off until a design based only on muscle3's public API is in
-place; the old implementation is in the git history.
 """
 
 import logging
