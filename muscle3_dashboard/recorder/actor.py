@@ -19,7 +19,7 @@ from pathlib import Path
 from libmuscle import Instance, InstanceFlags, Message
 from ymmsl.v0_2 import Operator
 
-from muscle3_dashboard.muscle3_utils import get_port_list, get_setting_optional
+from muscle3_dashboard.muscle3_utils import get_port_list
 from muscle3_dashboard.recorder.base import DeserializeFn, RecorderFactory
 from muscle3_dashboard.recorder.collection import RecorderCollection
 from muscle3_dashboard.recorder.zarr_recorder import ZarrRecorder
@@ -51,9 +51,9 @@ def _make_collection(
     """Read the recorder settings and build its collection over ``ports``."""
     config = Path(str(instance.get_setting("config", "str")))
     automatic_extract = instance.get_setting("automatic_extract", "bool", default=False)
-    fields_setting = get_setting_optional(instance, "automatic_extract_fields")
-    store_path_setting = get_setting_optional(instance, "store_path")
-    store_path = Path(str(store_path_setting)) if store_path_setting else Path.cwd()
+    fields = str(instance.get_setting("automatic_extract_fields", "str", default=""))
+    store_path_setting = str(instance.get_setting("store_path", "str", default=""))
+    store_path = Path(store_path_setting) if store_path_setting else Path.cwd()
 
     store_path.mkdir(parents=True, exist_ok=True)
     if not resuming:
@@ -68,7 +68,7 @@ def _make_collection(
         config,
         {p: deserializer_for_port(p) for p in ports},
         make_recorder,
-        fields=str(fields_setting).split() if fields_setting else None,
+        fields=fields.split() or None,
         automatic_extract=automatic_extract,
     )
 
