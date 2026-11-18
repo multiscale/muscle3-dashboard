@@ -160,8 +160,8 @@ def extract(payload):
 class _RecordingRecorder(Recorder):
     """A no-op Recorder that just remembers what it was asked to write."""
 
-    def __init__(self, store_dir, deserialize, extract, profile, log):
-        super().__init__(store_dir, deserialize, extract, profile)
+    def __init__(self, store_dir, deserialize, extract, profile, record_interval, log):
+        super().__init__(store_dir, deserialize, extract, profile, record_interval)
         self._log = log
 
     def _open_occurrence(self, base):
@@ -182,8 +182,10 @@ def test_collection_routes_per_port(tmp_path):
     store_path.mkdir()
     log = []
 
-    def make_recorder(store_dir, deserialize, extract, profile):
-        return _RecordingRecorder(store_dir, deserialize, extract, profile, log)
+    def make_recorder(store_dir, deserialize, extract, profile, record_interval):
+        return _RecordingRecorder(
+            store_dir, deserialize, extract, profile, record_interval, log
+        )
 
     collection = RecorderCollection(
         store_path, config, {"equilibrium_in": lambda data: data}, make_recorder
@@ -198,8 +200,10 @@ def test_collection_fields_restrict_what_gets_recorded(tmp_path):
     store_path.mkdir()
     log = []
 
-    def make_recorder(store_dir, deserialize, extract, profile):
-        return _RecordingRecorder(store_dir, deserialize, extract, profile, log)
+    def make_recorder(store_dir, deserialize, extract, profile, record_interval):
+        return _RecordingRecorder(
+            store_dir, deserialize, extract, profile, record_interval, log
+        )
 
     collection = RecorderCollection(
         store_path,
@@ -222,9 +226,9 @@ def test_collection_passes_record_interval(tmp_path):
     log = []
 
     def make_recorder(store_dir, deserialize, extract, profile, record_interval):
-        recorder = _RecordingRecorder(store_dir, deserialize, extract, profile, log)
-        recorder._record_interval = record_interval
-        return recorder
+        return _RecordingRecorder(
+            store_dir, deserialize, extract, profile, record_interval, log
+        )
 
     collection = RecorderCollection(
         store_path,

@@ -142,6 +142,6 @@ class Recorder(ABC):
 
 
 #: Builds a Recorder for one port's store dir, its message deserializer, the
-#: shared extract function, and the snapshotted config path (for provenance
-#: stamping).
-RecorderFactory = Callable[[Path, DeserializeFn, ExtractFn, str], "Recorder"]
+#: shared extract function, the snapshotted config path (for provenance
+#: stamping), and the record_interval.
+RecorderFactory = Callable[[Path, DeserializeFn, ExtractFn, str, float], "Recorder"]
