@@ -171,6 +171,7 @@ class RecorderCollection:
         make_recorder: RecorderFactory,
         fields: Collection[str] | None = None,
         automatic_extract: bool = False,
+        record_interval: float = 0.0,
     ) -> None:
         self.extract = load_extract_config(str(config), fields, automatic_extract)
         self.config_snapshot = snapshot_config(config, store_path)
@@ -180,6 +181,7 @@ class RecorderCollection:
                 deserialize,
                 self.extract,
                 str(self.config_snapshot),
+                record_interval,
             )
             for port, deserialize in deserializers.items()
         }
