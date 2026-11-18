@@ -9,7 +9,6 @@ rebuild via :func:`_combine`.
 """
 
 import logging
-import shutil
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -113,20 +112,39 @@ class ZarrRecorder(Recorder):
         Reopens the store, then reloads each group's data from disk into
         its rebuild buffer, instead of saving that buffer in the checkpoint
         itself. That way, a later schema mismatch can still rebuild from
-        the group's full history, not just what arrived since the resume."""
+        the group's full history, not just what arrived since the resume.
+
+        Data written after the checkpoint is dropped: the senders resume
+        from the same checkpoint and send it again."""
         self._open_occurrence(base)
         store = Path(self._store)
         if not store.exists():
             return
         root = zarr.open_group(str(store), mode="r")
-        for name in root.group_keys():
+        for name in list(root.group_keys()):
             try:
                 ds = xr.open_zarr(self._store, group=name, consolidated=False).load()
             except Exception:
                 logger.exception("could not rehydrate group '%s' from %s", name, store)
                 continue
+            ds = self._truncate_to_checkpoint(name, ds)
             self._buffers[name] = [ds]
             self._sig[name] = _signature(ds)
+
+    def _truncate_to_checkpoint(self, name: str, ds: xr.Dataset) -> xr.Dataset:
+        """Drop ``ds``'s entries after the checkpoint's ``last_time``,
+        rewriting the group on disk if any were dropped."""
+        last_time = self._state["last_time"]
+        if last_time is None:
+            return ds
+        keep = (ds[_TIME] <= last_time).values
+        if keep.all():
+            return ds
+        ds = ds.isel({_TIME: keep})
+        for var in ds.variables.values():
+            var.encoding.pop("chunks", None)
+        ds.to_zarr(self._store, group=name, mode="w", consolidated=False)
+        return ds
 
     def _write(self, datasets: dict[str, xr.Dataset]) -> str:
         for name, ds in datasets.items():
@@ -140,6 +158,8 @@ class ZarrRecorder(Recorder):
                 f"(dims={dict(ds.sizes)})"
             )
         group = group_name(name)
+        if not group:
+            raise ValueError("extracted dataset name must not be empty")
         parts = self._buffers.setdefault(group, [])
         parts.append(ds)
         sig = _signature(ds)
@@ -150,9 +170,8 @@ class ZarrRecorder(Recorder):
         if sig == self._sig[group]:
             ds.to_zarr(self._store, group=group, append_dim=_TIME, consolidated=False)
             return
-        # Schema changed: clear the group dir (no stale arrays from the old
-        # schema) and rewrite it from all messages.
-        shutil.rmtree(Path(self._store) / group, ignore_errors=True)
+        # Schema changed: rewrite the group from all messages; mode="w" drops
+        # the old schema's arrays.
         try:
             combined = _combine(parts)
             combined.to_zarr(self._store, group=group, mode="w", consolidated=False)

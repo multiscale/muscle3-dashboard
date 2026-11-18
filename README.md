@@ -29,10 +29,65 @@ muscle_dashboard path/to/my/muscle/simulation/workdir
 
 # Recording your own data
 
-> **The MUSCLE3 recorder actor is temporarily disabled.** It relied on
-> MUSCLE3 internals that changed in muscle3 0.11; importing
-> `muscle3_dashboard.recorder.actor` now raises an `ImportError`. Remove the recorder component from your yMMSL until
-> a replacement is available.
+Any MUSCLE3 actor can gain a live/replay Recorder tab in the dashboard by
+writing its traffic through `muscle3_dashboard.recorder` -- no dashboard-side
+configuration needed, since a recorder is recognised purely by its on-disk
+footprint.
+
+```bash
+pip install muscle3-dashboard[recording]
+```
+
+Bring two things: a `deserialize(bytes) -> your_message` function per port,
+and a `config` file defining `extract(message) -> dict[str, xarray.Dataset]`
+(or a `State` class -- see `muscle3_dashboard.visualization.base_state` --
+so the same file can double as a `Plotter` for live viewing). Everything
+else is generic:
+
+```python
+from muscle3_dashboard.recorder.actor import run_recorder_actor
+
+
+def deserialize(port: str, data: bytes) -> "MyMessage":
+    # might have different deserialization behavior for different ports
+    ...  # bytes -> your own message type
+
+
+def main() -> None:
+    run_recorder_actor(deserializer_for_port=deserialize)
+
+if __name__ == '__main__':
+  main()
+```
+
+Wire the recorder's `f_init` ports as extra receivers on the conduits you
+want to record:
+
+```yaml
+components:
+  rec:
+    implementation: my_recorder
+    ports:
+      f_init: state_in
+conduits:
+  model.state_out: [consumer.state_in, rec.state_in]
+settings:
+  rec.config: /path/to/config.py
+```
+
+Each `reuse_instance()` iteration delivers one message per port, and the
+recorder stops by itself once the senders close their ports. All ports of
+one recorder advance together, so they must receive the same number of
+messages; record senders running at different rates with one recorder each.
+
+`run_recorder_actor` writes one live-tailable Zarr store per port per
+outer-loop iteration, snapshots `config` next to the data for provenance,
+and supports checkpoint/resume. Its settings are `config`, `store_path`,
+`automatic_extract`, `automatic_extract_fields` and `record_interval` (only
+record a message once that much simulation time has passed since the last
+recorded one; the first and last message of each occurrence are always
+kept). See `imas_muscle3.actors.recorder_component` for a complete
+reference implementation.
 
 # Legal
 
