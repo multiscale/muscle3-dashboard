@@ -4,6 +4,11 @@ muscle_dashboard is a Panel based dashboard for log parsing and debugging of MUS
 # Installation
 Quick developer installation guide
 
+Requires **Python 3.11 or newer** (3.12+ recommended: current releases of
+panel, bokeh, numpy and zarr need it). Check with `python3 --version` before
+creating the venv, since the venv uses whichever Python creates it; if your
+default `python3` is older, create it with e.g. `python3.12 -m venv ./venv`.
+
 ```bash
 git clone git@github.com:multiscale/muscle3-dashboard.git
 cd muscle3-dashboard
@@ -14,13 +19,7 @@ pytest
 ```
 
 The per-run **simulation graph** is drawn from the run's `configuration.ymmsl`
-by [`ymmsl2svg`](https://github.com/multiscale/ymmsl2svg), an optional
-dependency. Install it with the `graph` extra (without it the rest of the
-dashboard works and the graph card is simply hidden):
-
-```bash
-pip install -e .[dev,graph]
-```
+by [`ymmsl2svg`](https://github.com/multiscale/ymmsl2svg).
 
 # How to use
 ```bash
@@ -28,7 +27,7 @@ pip install -e .[dev,graph]
 muscle_dashboard path/to/my/muscle/simulation/workdir
 ```
 
-# Recording your own actor's data
+# Recording your own data
 
 Any MUSCLE3 actor can gain a live/replay Recorder tab in the dashboard by
 writing its traffic through `muscle3_dashboard.recorder` -- no dashboard-side
@@ -166,11 +165,10 @@ Clicking a run opens its dashboard, a single page top to bottom:
 * a **crash banner** (only on failure) naming the likely-responsible
   component(s) and any collateral crashes;
 * a **simulation graph** of the coupling (from `configuration.ymmsl` via
-  the optional `graph` extra), with a colour legend and components coloured
+  `ymmsl2svg`), with a colour legend and components coloured
   by status (running / finished / crashed) and the likely-responsible
   component on a crash outlined and its log opened automatically; click any
-  component to inspect it (without the `graph` extra a dropdown lists the
-  components instead);
+  component to inspect it;
 * a **component summary** for the clicked component — a port block plus
   its program, settings and description, with referenced text files as
   inline links that open in a read-only viewer (with copy-path and

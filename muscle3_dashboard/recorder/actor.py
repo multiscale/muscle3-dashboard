@@ -6,9 +6,6 @@ and settings handling for free.
 The recorder listens on ``F_INIT`` ports: every ``reuse_instance()``
 iteration delivers one message per port, and the loop ends by itself once
 the senders close their ports, using only libmuscle's public API.
-
-See the README's "Recording your own actor's data" section for a worked
-example.
 """
 
 import logging

@@ -3,17 +3,13 @@ import os
 from pathlib import Path
 
 import param
+import ymmsl
+from ymmsl.v0_2 import Configuration
 
 from muscle3_dashboard.loganalyzer.base import BaseLogAnalyzer
 from muscle3_dashboard.loganalyzer.manager import ManagerLogAnalyzer
 
 logger = logging.getLogger(__name__)
-
-try:
-    import ymmsl
-    from ymmsl.v0_2 import Configuration
-except ImportError:  # optional "graph" extra not installed
-    ymmsl = None
 
 
 def _instance_names(base: str, multiplicity: list[int]) -> list[str]:
@@ -61,12 +57,11 @@ class DataManager(param.Parameterized):
 
         Knowing them up front lets the graph and status views show every
         component (coloured "not started") before the manager log first mentions
-        it. Returns an empty list when the optional ``ymmsl`` dependency or the
-        config file is missing; the manager log then discovers components as it
-        is parsed.
+        it. Returns an empty list when the config file is missing; the manager
+        log then discovers components as it is parsed.
         """
         config = run_folder / "configuration.ymmsl"
-        if ymmsl is None or not config.is_file():
+        if not config.is_file():
             return []
         try:
             cfg = ymmsl.load_as(Configuration, config)

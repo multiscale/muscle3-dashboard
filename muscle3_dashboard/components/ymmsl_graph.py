@@ -5,14 +5,21 @@ from collections.abc import Callable
 
 import panel as pn
 import param
+from ymmsl import load_as
+from ymmsl.v0_2 import Configuration, check_timelines
+from ymmsl2svg.main import configuration2svg
+from ymmsl2svg.settings import settings as ymmsl2svg_settings
 
-from muscle3_dashboard.constants import CARD_MARGIN, SHOW_PORT_ICONS
+from muscle3_dashboard.constants import CARD_MARGIN
 from muscle3_dashboard.data_manager import DataManager
 from muscle3_dashboard.instances import base_name
 from muscle3_dashboard.loganalyzer.manager import ComponentStatus
 from muscle3_dashboard.reactive import encode_markup
 
 logger = logging.getLogger(__name__)
+
+# Draw without ymmsl2svg's debug overlays.
+ymmsl2svg_settings.debug = False
 
 #: MUSCLE3 docs section ("Designing the connections") with the gMMSL diagram
 #: explaining how conduits connect the port operators (F_INIT / O_I / S / O_F)
@@ -96,16 +103,6 @@ def _legend_html() -> str:
     )
 
 
-try:
-    from ymmsl import load_as
-    from ymmsl.v0_2 import Configuration, TimelineTree
-    from ymmsl2svg.main import configuration2svg
-    from ymmsl2svg.settings import settings as ymmsl2svg_settings
-except ImportError:  # optional "graph" extra not installed
-    configuration2svg = None
-    ymmsl2svg_settings = None
-
-
 class _ClickableSVG(pn.reactive.ReactiveHTML):
     """Render an SVG string and report the clicked component.
 
@@ -169,14 +166,12 @@ class _ClickableSVG(pn.reactive.ReactiveHTML):
 class YmmslGraphViewer(pn.viewable.Viewer):
     """Render the run's coupling diagram from its ``configuration.ymmsl``.
 
-    Visualization needs the optional ``ymmsl2svg`` dependency
-    (``pip install muscle3-dashboard[graph]``); without it, a missing config,
-    or an unvisualizable model, a short message and a component dropdown are
-    shown instead. Component boxes are coloured by status (crashed also
-    outlined); clicking a component (or picking it from the dropdown) invokes
-    ``on_select`` with its name to show that component's logs. ymmsl2svg is
-    called at most once per run -- the diagram is static, so later ticks only
-    re-colour the cached SVG rather than re-rendering it.
+    With a missing config or an unvisualizable model, a short message and a
+    component dropdown are shown instead. Component boxes are coloured by
+    status (crashed also outlined); clicking a component (or picking it from
+    the dropdown) invokes ``on_select`` with its name to show that component's
+    logs. ymmsl2svg is called at most once per run -- the diagram is static, so
+    later ticks only re-colour the cached SVG rather than re-rendering it.
     """
 
     def __init__(
@@ -187,10 +182,10 @@ class YmmslGraphViewer(pn.viewable.Viewer):
         super().__init__()
         self.data_manager = data_manager
         self.on_select = on_select
-        self._base_svg: str | None = None  # rendered graph, before styling
-        self._rendered = False
-        # ymmsl2svg has been called for good (drawn, or definitively failed) and
-        # must not be retried each tick; the config is static once present.
+        # Rendered graph before styling; None while there is no graph.
+        self._base_svg: str | None = None
+        # The config was found and drawn (or failed to draw) once; it is static
+        # once present, so don't retry each tick.
         self._svg_done = False
         self._styled: dict[str, tuple[str, float]] = {}  # name -> (status, opacity)
         # base name -> monotonic time its log was last seen to change, and
@@ -241,15 +236,6 @@ class YmmslGraphViewer(pn.viewable.Viewer):
 
     def render(self) -> None:
         """Render configuration.ymmsl into the graph, with fallbacks."""
-        if configuration2svg is None:
-            # A missing dependency won't change while we run: settle for good.
-            self._svg_done = True
-            self._show_message(
-                "Install the optional `ymmsl2svg` dependency to see the "
-                "simulation graph: `pip install muscle3-dashboard[graph]`."
-            )
-            return
-
         config = self.data_manager.run_folder / "configuration.ymmsl"
         if not config.is_file():
             # The config may yet be written; keep polling (cheaply) for it.
@@ -273,11 +259,6 @@ class YmmslGraphViewer(pn.viewable.Viewer):
             self._show_message(f"Could not load `{config.name}`: {load_error}")
             return
 
-        ymmsl2svg_settings.debug = False
-        ymmsl2svg_settings.check_timelines = False
-        # hasattr-guarded so an older ymmsl2svg without the option still renders.
-        if not SHOW_PORT_ICONS and hasattr(ymmsl2svg_settings, "disable_port_icons"):
-            ymmsl2svg_settings.disable_port_icons()
         try:
             svg = configuration2svg(cfg)
         except Exception as draw_error:
@@ -289,12 +270,11 @@ class YmmslGraphViewer(pn.viewable.Viewer):
         # still draw fine, but the layout is approximate — flag it.
         note_html = ""
         try:
-            TimelineTree(cfg.root_model()).check_consistent()
+            check_timelines(cfg.root_model())
         except Exception as timeline_error:
             note_html = self._approximate_note(timeline_error)
 
         self._base_svg = str(svg)
-        self._rendered = True
         self.graph.visible = True
         self.legend.visible = True
         self.fallback_select.visible = False
@@ -466,15 +446,15 @@ class YmmslGraphViewer(pn.viewable.Viewer):
         if not self._svg_done:
             self.render()  # draws the graph or shows the message + dropdown
             return
-        if self._rendered:
+        if self._base_svg is not None:
             # The diagram is static; only statuses / recent activity evolve, so
             # re-colour the cached SVG when the sampled styling changes.
             styles = self._component_styles()
             if styles != self._styled:
                 self._apply_styling(styles)
         else:
-            # No graph and we won't retry ymmsl2svg; keep the dropdown current
-            # as components appear in the log.
+            # The config could not be drawn; keep the dropdown current as
+            # components appear in the log.
             self._populate_fallback()
 
     def __panel__(self):

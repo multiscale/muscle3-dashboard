@@ -19,9 +19,10 @@ passed to ``State``'s constructor — the plot file's own chance to turn
 settings into whatever ``State`` expects. Otherwise ``State`` gets an empty
 dict.
 
-The plotting stack (xarray, zarr, holoviews, the plot file's own imports) is
-imported lazily per tab, so a missing dependency degrades one tab to a
-message pane rather than breaking the dashboard.
+The plotting stack (xarray, zarr, holoviews) and the plot file's own imports
+are loaded lazily per tab, keeping them off the dashboard's startup path; a
+plot file that fails to import degrades one tab to a message pane rather
+than breaking the dashboard.
 """
 
 import html
@@ -68,8 +69,8 @@ def find_recorder_instances(run_folder: Path) -> dict[str, list[Path]]:
 
 
 def _read_settings(run_folder: Path) -> dict[str, object]:
-    """Flat settings from the run's ``configuration.ymmsl`` (empty if
-    unavailable — e.g. the optional ymmsl dependency is not installed)."""
+    """Flat settings from the run's ``configuration.ymmsl`` (empty if it is
+    missing or can't be read)."""
     config = run_folder / "configuration.ymmsl"
     if not config.is_file():
         return {}
@@ -86,10 +87,8 @@ def _read_settings(run_folder: Path) -> dict[str, object]:
 
 def _profile_from_stores(port_dirs: list[Path]) -> str | None:
     """The ``distill_profile`` stamped on any of this recorder's stores."""
-    try:
-        import zarr
-    except ImportError:
-        return None
+    import zarr
+
     for port in port_dirs:
         for store in sorted(port.glob("*.zarr")):
             try:
