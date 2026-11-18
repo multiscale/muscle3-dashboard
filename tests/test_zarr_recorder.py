@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import xarray as xr
 from libmuscle import Message
 
@@ -139,6 +140,51 @@ def test_reopen_occurrence_rehydrates_buffer_for_later_rebuild(tmp_path):
     second = ds["value"].values[1]
     assert list(second[:5]) == [3.0] * 5
     assert np.isnan(second[5:]).all()
+
+
+def test_reopen_occurrence_drops_data_after_checkpoint(tmp_path):
+    """Messages written after the checkpoint get re-sent on resume, so they
+    must not stay on disk twice."""
+    rec1 = _open(tmp_path, "0000")
+    for t in (0.0, 1.0, 2.0):
+        rec1._append("x/y", _single_1d(t, np.ones(8)))
+
+    rec2 = ZarrRecorder(tmp_path, lambda data: data, lambda message: {}, "cfg.py")
+    rec2.restore_state(
+        {"occurrence": 0, "last_time": 1.0, "prev_ended": False, "is_open": True}
+    )
+    rec2._append("x/y", _single_1d(2.0, np.ones(8)))
+    rec2._close_occurrence()
+
+    ds = xr.open_zarr(
+        tmp_path / "0000.zarr", group=group_name("x/y"), consolidated=False
+    )
+    assert list(ds.time.values) == [0.0, 1.0, 2.0]
+
+
+def test_reopen_occurrence_keeps_group_emptied_by_checkpoint(tmp_path):
+    rec1 = _open(tmp_path, "0000")
+    rec1._append("x/y", _single_1d(2.0, np.ones(8)))
+
+    rec2 = ZarrRecorder(tmp_path, lambda data: data, lambda message: {}, "cfg.py")
+    rec2.restore_state(
+        {"occurrence": 0, "last_time": 1.0, "prev_ended": False, "is_open": True}
+    )
+    rec2._append("x/y", _single_1d(2.0, np.ones(8)))
+    rec2._close_occurrence()
+
+    ds = xr.open_zarr(
+        tmp_path / "0000.zarr", group=group_name("x/y"), consolidated=False
+    )
+    assert list(ds.time.values) == [2.0]
+
+
+def test_empty_dataset_name_is_rejected(tmp_path):
+    rec = _open(tmp_path, "0000")
+    rec._append("x/y", _single_1d(0.0, np.ones(8)))
+    with pytest.raises(ValueError, match="must not be empty"):
+        rec._append("", _single_1d(0.0, np.ones(8)))
+    assert (tmp_path / "0000.zarr" / "x.y").is_dir()
 
 
 def test_reopen_occurrence_on_missing_store_starts_empty(tmp_path):
