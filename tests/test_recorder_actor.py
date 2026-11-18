@@ -1,3 +1,5 @@
+from unittest.mock import Mock
+
 import pytest
 from libmuscle import Message
 from ymmsl.v0_2 import Operator
