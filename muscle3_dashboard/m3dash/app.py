@@ -207,7 +207,7 @@ def _runs_table_html(runs: list[Run]) -> str:
             label = unique
         else:
             query = urllib.parse.urlencode({"dir": path})
-            label = f'<a href="run?{query}" target="_blank">{unique}</a>'
+            label = f'<a href="run?{query}">{unique}</a>'
         rows.append(
             "<tr>"
             '<td style="font-family:monospace;white-space:pre">'
@@ -261,7 +261,9 @@ def index_app():
     refresh()
 
     return pn.template.VanillaTemplate(
-        title="m3dash | MUSCLE3 runs",
+        site="m3dash",
+        site_url="/",
+        title="MUSCLE3 runs",
         main=[pn.Column(table, summary)],
     )
 
@@ -274,7 +276,9 @@ def run_app():
         # NB: a bare pane returned from an app function may render an
         # empty document; wrap in a template like the other pages.
         return pn.template.VanillaTemplate(
-            title="m3dash | error",
+            site="m3dash",
+            site_url="/",
+            title="error",
             main=[
                 pn.pane.Markdown(
                     f"Not a MUSCLE3 run directory (no `{MANAGER_LOG}`): "

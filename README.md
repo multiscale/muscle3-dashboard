@@ -1,5 +1,5 @@
 # Panel dashboard for MUSCLE3 simulations
-muscle_dashboard is a Panel based dashboard for log parsing and debugging of MUSCLE3 simulations.
+m3dash is a Panel based dashboard for log parsing and debugging of MUSCLE3 simulations.
 
 # Installation
 Quick developer installation guide
@@ -23,10 +23,9 @@ pip install -e .[dev,graph]
 ```
 
 # How to use
-```bash
-# make sure your virtual environment is activated
-muscle_dashboard path/to/my/muscle/simulation/workdir
-```
+
+`m3dash` discovers your runs and serves a per-run dashboard for each — see
+[m3dash](#m3dash-all-your-runs-behind-one-ssh-forward) below.
 
 # Recording your own actor's data
 
