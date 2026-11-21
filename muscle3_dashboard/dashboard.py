@@ -175,6 +175,10 @@ class Dashboard(pn.viewable.Viewer):
         for name, viewer in added:
             self._recorder_names.add(name)
             self._tabs.append((name, viewer))
+            tab_index = len(self._tabs) - 1
+            viewer.set_active_check(
+                lambda i=tab_index: self._tabs is not None and self._tabs.active == i
+            )
 
     def _responsible_component(self) -> str | None:
         """Base name of the likely-responsible crashed component, if any.

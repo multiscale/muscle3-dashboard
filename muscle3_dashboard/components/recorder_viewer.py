@@ -27,7 +27,7 @@ message pane rather than breaking the dashboard.
 import html
 import logging
 import runpy
-from collections.abc import Collection
+from collections.abc import Callable, Collection
 from pathlib import Path
 
 import panel as pn
@@ -177,6 +177,7 @@ class RecorderViewer(Viewer):
         self._state = None
         self._plotter = None
         self._data_key: object = None
+        self._is_active: Callable[[], bool] = lambda: True
 
         self.occurrence_select = pn.widgets.Select(
             name="Occurrence (outer-loop iteration)",
@@ -196,6 +197,12 @@ class RecorderViewer(Viewer):
         self._build_plotter()
         self._refresh()
         add_session_periodic_callback(self._refresh, _REFRESH_MS)
+
+    def set_active_check(self, is_active: Callable[[], bool]) -> None:
+        """Have the periodic refresh skip its work while ``is_active()`` is
+        false -- set by the caller once it knows this viewer's tab index, so
+        a recorder tab in the background stops polling its stores."""
+        self._is_active = is_active
 
     # -- construction ------------------------------------------------------
 
@@ -259,6 +266,29 @@ class RecorderViewer(Viewer):
             {store.stem for port in self._port_dirs for store in port.glob("*.zarr")}
         )
 
+    def _growth_key(self, occurrence: str) -> tuple:
+        """Cheap stand-in for ``_load_data``'s result: each group's ``time``
+        length, read straight off the Zarr array metadata instead of
+        building full xarray Datasets. Lets ``_refresh`` detect "nothing
+        changed" without paying for a real open of every group."""
+        import zarr
+
+        sizes = []
+        for port in self._port_dirs:
+            store = port / f"{occurrence}.zarr"
+            if not store.is_dir():
+                continue
+            try:
+                root = zarr.open_group(str(store), mode="r")
+            except Exception:
+                continue  # store being created right now
+            for group in root.group_keys():
+                try:
+                    sizes.append((group, root[group]["time"].shape[0]))
+                except Exception:
+                    continue  # group being written right now
+        return (occurrence, tuple(sorted(sizes)))
+
     def _load_data(self, occurrence: str) -> dict:
         """``group -> Dataset`` for one occurrence, across all port stores.
 
@@ -295,7 +325,15 @@ class RecorderViewer(Viewer):
         self._refresh()
 
     def _refresh(self) -> None:
-        """Re-check the stores; push data into the state only when it grew."""
+        """Re-check the stores; push data into the state only when it grew.
+
+        Skipped while this tab isn't the active one (see
+        :meth:`set_active_check`) -- a backgrounded tab stops polling
+        entirely rather than doing cheap-but-not-free metadata reads for a
+        plot nobody is looking at.
+        """
+        if not self._is_active():
+            return
         occurrences = self._occurrences()
         if not occurrences:
             self.status_pane.object = "*No data recorded yet.*"
@@ -312,16 +350,11 @@ class RecorderViewer(Viewer):
             )
             return
 
-        data = self._load_data(occurrence)
-        key = (
-            occurrence,
-            tuple(
-                (group, ds.sizes.get("time", 0)) for group, ds in sorted(data.items())
-            ),
-        )
+        key = self._growth_key(occurrence)
         if key == self._data_key:
             return
         self._data_key = key
+        data = self._load_data(occurrence)
         self.status_pane.object = f"*Showing occurrence {occurrence}.*"
         self._state.data = data
         self._state.param.trigger("data")
